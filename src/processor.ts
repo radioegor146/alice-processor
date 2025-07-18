@@ -136,6 +136,8 @@ export class Processor {
 
         const prompt = this.params.promptGenerator.generate(state, functions);
 
+        this.logger.info(`Received request: ${request.text}`);
+
         const response = await this.params.openAI.chat.completions.create({
             model: this.params.model,
             messages: [
@@ -149,7 +151,7 @@ export class Processor {
 
         const responseContent = response.choices[0].message.content ?? "";
 
-        this.logger.debug(`Received answer from LLM: ${responseContent}`);
+        this.logger.info(`Received answer from LLM: ${responseContent}`);
 
         previousMessages.push({
             role: "assistant",
