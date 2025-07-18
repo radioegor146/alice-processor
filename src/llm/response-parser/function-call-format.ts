@@ -4,7 +4,7 @@ import {getLogger} from "../../logger";
 import {logger} from "handlebars";
 
 export class FunctionCallFormatResponseParser implements ResponseParser {
-    private readonly logger = getLogger();
+    private readonly logger = getLogger<FunctionCallFormatResponseParser>();
 
     parse(text: string): StructuredResponse {
         const parts = text.split(/\s/ig).filter(part => part);
