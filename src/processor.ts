@@ -16,6 +16,7 @@ import {ChatCompletionMessageParam} from "openai/src/resources/chat/completions/
 import {randomUUID} from "node:crypto";
 import {PromptGenerator} from "./llm/prompt-generator/types";
 import {ResponseParser} from "./llm/response-parser/types";
+import {AliceDirectiveFunctionServer} from "./llm/function/alice-directive";
 
 interface ProcessorParams {
     openAI: OpenAI;
@@ -32,10 +33,26 @@ interface ProcessorRequest {
     sessionId?: string;
 }
 
+export interface SoundSetLevelDirective {
+    type: "soundSetLevel";
+    newLevel: number;
+}
+
+export interface SoundQuieterDirective {
+    type: "soundQuieter";
+}
+
+export interface SoundLouderDirective {
+    type: "soundLouder";
+}
+
+export type AliceDirective = SoundSetLevelDirective | SoundQuieterDirective | SoundLouderDirective;
+
 interface ProcessorResult {
     text: string;
     requireMoreInput: boolean;
     sessionId: string;
+    directives: AliceDirective[];
 }
 
 type ExtendedFunctionInfo = FunctionInfo & {
@@ -160,17 +177,22 @@ export class Processor {
         await this.params.sessionStorage.save(sessionId, previousMessages);
 
         const structuredResponse = this.params.responseParser.parse(responseContent);
-        this.callFunctions(functions, structuredResponse.functionCalls)
-            .catch(error => this.logger.error(`Failed to call functions: ${error}`));
+        const [directives, functionPromises] =
+            this.callFunctions(functions, structuredResponse.functionCalls);
+
+        functionPromises.catch(error => this.logger.error(`Failed to call functions: ${error}`));
 
         return {
             text: structuredResponse.text,
             requireMoreInput: structuredResponse.requireMoreInput,
-            sessionId
+            sessionId,
+            directives
         };
     }
 
-    private async callFunctions(functions: ExtendedFunctions, functionCalls: FunctionCall[]): Promise<void> {
+    private callFunctions(functions: ExtendedFunctions, functionCalls: FunctionCall[]): [AliceDirective[], Promise<void>] {
+        const directives: AliceDirective[] = [];
+
         const promises: Promise<void>[] = [];
         for (const call of functionCalls) {
             const func = functions[call.name];
@@ -183,6 +205,11 @@ export class Processor {
                 continue;
             }
 
+            if (func.server instanceof AliceDirectiveFunctionServer) {
+                directives.push(func.server.callDirectiveFunction(call.name, call.parameters));
+                continue;
+            }
+
             promises.push((async () => {
                 try {
                     await func.server.callFunction(call.name, call.parameters);
@@ -192,7 +219,8 @@ export class Processor {
             })());
         }
 
-        await Promise.all(promises);
+        return [directives, Promise.all(promises).then(() => {
+        })];
     }
 
     private validateParameters(func: ExtendedFunctionInfo, callArguments: FunctionCallArguments): boolean {
