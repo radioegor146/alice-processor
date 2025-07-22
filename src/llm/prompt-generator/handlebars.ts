@@ -6,7 +6,9 @@ export class HandlebarsPromptGenerator implements PromptGenerator {
     private readonly template: HandlebarsTemplateDelegate;
 
     constructor(private readonly rawTemplate: string) {
-        this.template = Handlebars.compile(rawTemplate);
+        this.template = Handlebars.compile(rawTemplate, {
+            noEscape: true
+        });
     }
 
     generate(state: State, functions: Functions): string {
@@ -35,7 +37,7 @@ export class HandlebarsPromptGenerator implements PromptGenerator {
     private getFunctionArgumentsText(argumentMap: Record<string, FunctionArgument>): string {
         let text = "";
         for (const [name, argument] of Object.entries(argumentMap)) {
-            text += `${name} (${argument.description})=${this.getFunctionArgumentConstraintsText(argument.constraints)}`;
+            text += ` ${name} (${argument.description})=${this.getFunctionArgumentConstraintsText(argument.constraints)}`;
         }
         return text;
     }

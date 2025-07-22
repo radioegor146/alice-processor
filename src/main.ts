@@ -16,6 +16,7 @@ import {HandlebarsPromptGenerator} from "./llm/prompt-generator/handlebars";
 import {PlainResponseParser} from "./llm/response-parser/plain";
 import {FunctionCallFormatResponseParser} from "./llm/response-parser/function-call-format";
 import {createAliceDirectiveFunctionServer} from "./llm/function/alice-directive";
+import {JSONFormatResponseParser} from "./llm/response-parser/json-format";
 
 const logger = getLogger();
 
@@ -65,7 +66,7 @@ const promptGenerator = new HandlebarsPromptGenerator(
 
 const sessionStorage = new InMemorySessionStorage<ChatCompletionMessageParam[]>();
 
-const responseParser = new FunctionCallFormatResponseParser();
+const responseParser = new JSONFormatResponseParser();
 
 const processor = new Processor({
     openAI,
