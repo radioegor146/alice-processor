@@ -40,6 +40,7 @@ export type FunctionCallArguments = Record<string, number>;
 export interface FunctionCall {
     name: string;
     parameters: FunctionCallArguments;
+    schedule?: number;
 }
 
 export interface StructuredResponse {

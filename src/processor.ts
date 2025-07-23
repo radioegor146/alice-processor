@@ -224,6 +224,10 @@ export class Processor {
 
             promises.push((async () => {
                 try {
+                    if (call.schedule) {
+                        this.logger.info(`Calling ${call.name} with ${JSON.stringify(call.parameters)} after ${call.schedule} milliseconds`);
+                        await new Promise(resolve => setTimeout(resolve, call.schedule));
+                    }
                     await func.server.callFunction(call.name, call.parameters);
                 } catch (e) {
                     this.logger.warn(`Failed to call function '${call.name}' with parameters ${JSON.stringify(call.parameters)}: ${e}`);
