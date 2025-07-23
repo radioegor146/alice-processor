@@ -49,6 +49,10 @@ INPUT: алиса включи свет на пять минут
 OUTPUT:
 { "function_calls": [{ "name": "set_lights", "args": { "state": 1 } }, { "name": "set_lights", "args": { "state": 0 }, "schedule": "5m" }], "text": "Свет включен и будет выключен через 5 минут", "continue_dialog": false }
 
+INPUT: алиса выключи свет на пять минут
+OUTPUT:
+{ "function_calls": [{ "name": "set_lights", "args": { "state": 0 } }, { "name": "set_lights", "args": { "state": 1 }, "schedule": "5m" }], "text": "Свет включен и будет выключен через 5 минут", "continue_dialog": false }
+
 INPUT: алиса включи свет через пять минут
 OUTPUT:
 { "function_calls": [{ "name": "set_lights", "args": { "state": 1 }, "schedule": "5m" }], "text": "Свет будет включен через 5 минут", "continue_dialog": false }
