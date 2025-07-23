@@ -28,9 +28,18 @@ interface ProcessorParams {
     responseParser: ResponseParser;
 }
 
+export type BiometryAge = "unknown" | "child" | "adult";
+export type BiometryGender = "unknown" | "female" | "male";
+
+export interface BiometryData {
+    age: BiometryAge;
+    gender: BiometryGender;
+}
+
 interface ProcessorRequest {
     text: string;
     sessionId?: string;
+    biometry: BiometryData;
 }
 
 export interface SoundSetLevelDirective {
@@ -149,6 +158,9 @@ export class Processor {
         });
 
         const state = await this.getState();
+
+        this.fillStateFromRequest(state, request);
+
         const functions = await this.getFunctions();
 
         const prompt = this.params.promptGenerator.generate(state, functions);
@@ -265,5 +277,16 @@ export class Processor {
                 break;
         }
         return true;
+    }
+
+    private fillStateFromRequest(state: State, request: ProcessorRequest): void {
+        state["input_person_gender"] = {
+            description: "gender of person who talked to you",
+            value: request.biometry.gender
+        };
+        state["input_person_age"] = {
+            description: "age of person who talked to you",
+            value: request.biometry.age
+        };
     }
 }

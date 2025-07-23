@@ -39,7 +39,11 @@ const app = express();
 
 const requestType = z.object({
     text: z.string(),
-    sessionId: z.string().uuid().optional()
+    sessionId: z.string().uuid().optional(),
+    biometry: z.object({
+        age: z.union([z.literal("unknown"), z.literal("adult"), z.literal("child")]),
+        gender: z.union([z.literal("unknown"), z.literal("female"), z.literal("male")])
+    })
 });
 
 const openAI = new OpenAI({
