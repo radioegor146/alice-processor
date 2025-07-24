@@ -37,18 +37,26 @@ export class HandlebarsPromptGenerator implements PromptGenerator {
     private getFunctionArgumentsText(argumentMap: Record<string, FunctionArgument>): string {
         let text = "";
         for (const [name, argument] of Object.entries(argumentMap)) {
-            text += ` ${name} (${argument.description})=${this.getFunctionArgumentConstraintsText(argument.constraints)}`;
+            text += ` ${name} (MUST BE ${argument.constraints.argumentType}) (${argument.description})=${this.getFunctionArgumentConstraintsText(argument.constraints)}`;
         }
         return text;
     }
 
     private getFunctionArgumentConstraintsText(constraints: FunctionArgumentValueConstraints): string {
         switch (constraints.type) {
-            case "variants": {
-                return constraints.variants.map(variant => `${variant.value} (${variant.description})`).join("|");
+            case "number-variants": {
+                return constraints.variants.map(variant =>
+                    `${variant.value} (${variant.description})`).join("|");
             }
-            case "min-max": {
+            case "number-min-max": {
                 return `(min ${constraints.min}, max ${constraints.max})`;
+            }
+            case "string-not-empty": {
+                return "\"any not empty string\"";
+            }
+            case "string-variants": {
+                return constraints.variants.map(variant =>
+                    `"${variant.value}" (${variant.description})`).join("|");
             }
         }
         return "(any number)";

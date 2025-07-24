@@ -8,7 +8,7 @@ const responseType = z.object({
     continue_dialog: z.boolean(),
     function_calls: z.array(z.object({
         name: z.string(),
-        args: z.record(z.number()),
+        args: z.record(z.union([z.number(), z.string()])),
         schedule: z.string().optional()
     }))
 });

@@ -13,10 +13,9 @@ import {FunctionServer} from "./llm/function/types";
 import {RemoteFunctionServer} from "./llm/function/remote";
 import {ChatCompletionMessageParam} from "openai/src/resources/chat/completions/completions";
 import {HandlebarsPromptGenerator} from "./llm/prompt-generator/handlebars";
-import {PlainResponseParser} from "./llm/response-parser/plain";
-import {FunctionCallFormatResponseParser} from "./llm/response-parser/function-call-format";
 import {createAliceDirectiveFunctionServer} from "./llm/function/alice-directive";
 import {JSONFormatResponseParser} from "./llm/response-parser/json-format";
+import cors from "cors";
 
 const logger = getLogger();
 
@@ -36,6 +35,8 @@ const PROCESSOR_FUNCTION_SERVER_URLS = (process.env.PROCESSOR_FUNCTION_SERVER_UR
 const PROCESSOR_STATE_SERVER_URLS = (process.env.PROCESSOR_STATE_SERVER_URLS ?? "").split(",").filter(url => url);
 
 const app = express();
+
+app.use(cors());
 
 const requestType = z.object({
     text: z.string(),

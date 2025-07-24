@@ -2,11 +2,12 @@ import {getLogger} from "./logger";
 import {SessionStorage} from "./session-storage/types";
 import {OpenAI} from "openai";
 import {
+    BiometryData,
     FunctionArgument,
     FunctionCall,
     FunctionCallArguments,
     FunctionInfo,
-    Functions,
+    Functions, SessionContext,
     State,
     StructuredResponse
 } from "./llm/types";
@@ -17,6 +18,7 @@ import {randomUUID} from "node:crypto";
 import {PromptGenerator} from "./llm/prompt-generator/types";
 import {ResponseParser} from "./llm/response-parser/types";
 import {AliceDirectiveFunctionServer} from "./llm/function/alice-directive";
+import {ca} from "zod/dist/types/v4/locales";
 
 interface ProcessorParams {
     openAI: OpenAI;
@@ -28,15 +30,7 @@ interface ProcessorParams {
     responseParser: ResponseParser;
 }
 
-export type BiometryAge = "unknown" | "child" | "adult";
-export type BiometryGender = "unknown" | "female" | "male";
-
-export interface BiometryData {
-    age: BiometryAge;
-    gender: BiometryGender;
-}
-
-interface ProcessorRequest {
+export interface ProcessorRequest {
     text: string;
     sessionId?: string;
     biometry: BiometryData;
@@ -55,9 +49,33 @@ export interface SoundLouderDirective {
     type: "soundLouder";
 }
 
-export type AliceDirective = SoundSetLevelDirective | SoundQuieterDirective | SoundLouderDirective;
+export interface StartVoiceEnrollmentDirective {
+    type: "startVoiceEnrollment";
+    personId: string;
+    userId: number;
+    timeout: number;
+}
 
-interface ProcessorResult {
+export interface FinishVoiceEnrollmentDirective {
+    type: "finishVoiceEnrollment";
+    personId: string;
+    userId: number;
+}
+
+export interface CancelVoiceEnrollmentDirective {
+    type: "cancelVoiceEnrollment";
+}
+
+export interface RemoveVoiceEnrollmentDirective {
+    type: "removeVoiceEnrollment";
+    userId: number;
+}
+
+export type AliceDirective = SoundSetLevelDirective | SoundQuieterDirective | SoundLouderDirective
+    | StartVoiceEnrollmentDirective | FinishVoiceEnrollmentDirective | CancelVoiceEnrollmentDirective |
+    RemoveVoiceEnrollmentDirective;
+
+export interface ProcessorResult {
     text: string;
     requireMoreInput: boolean;
     sessionId: string;
@@ -157,6 +175,11 @@ export class Processor {
             content: request.text
         });
 
+        const context: SessionContext = {
+            id: sessionId,
+            biometry: request.biometry
+        };
+
         const state = await this.getState();
 
         this.fillStateFromRequest(state, request);
@@ -190,7 +213,7 @@ export class Processor {
 
         const structuredResponse = this.params.responseParser.parse(responseContent);
         const [directives, functionPromises] =
-            this.callFunctions(functions, structuredResponse.functionCalls);
+            await this.callFunctions(context, functions, structuredResponse.functionCalls);
 
         functionPromises.catch(error => this.logger.error(`Failed to call functions: ${error}`));
 
@@ -202,7 +225,8 @@ export class Processor {
         };
     }
 
-    private callFunctions(functions: ExtendedFunctions, functionCalls: FunctionCall[]): [AliceDirective[], Promise<void>] {
+    private async callFunctions(context: SessionContext, functions: ExtendedFunctions,
+                                functionCalls: FunctionCall[]): Promise<[AliceDirective[], Promise<void>]> {
         const directives: AliceDirective[] = [];
 
         const promises: Promise<void>[] = [];
@@ -218,7 +242,7 @@ export class Processor {
             }
 
             if (func.server instanceof AliceDirectiveFunctionServer) {
-                directives.push(func.server.callDirectiveFunction(call.name, call.parameters));
+                directives.push(await func.server.callDirectiveFunction(context, call.name, call.parameters));
                 continue;
             }
 
@@ -228,7 +252,7 @@ export class Processor {
                         this.logger.info(`Calling ${call.name} with ${JSON.stringify(call.parameters)} after ${call.schedule} milliseconds`);
                         await new Promise(resolve => setTimeout(resolve, call.schedule));
                     }
-                    await func.server.callFunction(call.name, call.parameters);
+                    await func.server.callFunction(context, call.name, call.parameters);
                 } catch (e) {
                     this.logger.warn(`Failed to call function '${call.name}' with parameters ${JSON.stringify(call.parameters)}: ${e}`);
                 }
@@ -267,15 +291,54 @@ export class Processor {
         return true;
     }
 
-    private validateParameterValue(value: number, constraints: FunctionArgument): boolean {
+    private validateParameterValue(value: number | string, constraints: FunctionArgument): boolean {
+        let numberValue = 0;
+        let stringValue = "";
+        switch (constraints.constraints.argumentType) {
+            case "number":
+                switch (typeof value) {
+                    case "string":
+                        try {
+                            numberValue = parseFloat(value);
+                        } catch (e) {
+                            this.logger.warn(`Failed to parse '${value}' as number`);
+                            return false;
+                        }
+                        break;
+                    case "number":
+                        numberValue = value;
+                        break;
+                }
+                break;
+            case "string":
+                switch (typeof value) {
+                    case "number":
+                        stringValue = value.toString();
+                        break;
+                    default:
+                        stringValue = value;
+                        break;
+                }
+                break;
+        }
         switch (constraints.constraints.type) {
-            case "min-max":
-                if (value < constraints.constraints.min || value > constraints.constraints.max) {
+            case "number-min-max":
+                if (numberValue < constraints.constraints.min || numberValue > constraints.constraints.max) {
                     return false;
                 }
                 break;
-            case "variants":
-                if (!constraints.constraints.variants.find(variant => variant.value === value)) {
+            case "number-variants":
+                if (!constraints.constraints.variants.find(variant => variant.value === numberValue)) {
+                    return false;
+                }
+                break;
+            case "string-not-empty":
+                if (!stringValue) {
+                    return false;
+                }
+                break;
+            case "string-variants":
+                if (!constraints.constraints.variants.find(variant => variant.value === stringValue)) {
                     return false;
                 }
                 break;
@@ -291,6 +354,10 @@ export class Processor {
         state["input_person_age"] = {
             description: "age of person who talked to you",
             value: request.biometry.age
+        };
+        state["input_person_name"] = {
+            description: "name of person who talked to you or 'unknown' if not enrolled yet",
+            value: "unknown"
         };
     }
 }

@@ -1,4 +1,4 @@
-import {FunctionArgumentValueConstraints, Functions} from "../types";
+import {FunctionArgumentValueConstraints, Functions, SessionContext} from "../types";
 import z from "zod";
 
 export const functionsType = z.record(z.object({
@@ -7,15 +7,29 @@ export const functionsType = z.record(z.object({
         description: z.string(),
         constraints: z.discriminatedUnion("type", [
             z.object({
-                type: z.literal("min-max"),
+                type: z.literal("number-min-max"),
+                argumentType: z.literal("number"),
                 min: z.number(),
                 max: z.number()
             }),
             z.object({
-                type: z.literal("variants"),
+                type: z.literal("number-variants"),
+                argumentType: z.literal("number"),
                 variants: z.array(z.object({
                     description: z.string(),
                     value: z.number()
+                }))
+            }),
+            z.object({
+                type: z.literal("string-not-empty"),
+                argumentType: z.literal("string")
+            }),
+            z.object({
+                type: z.literal("string-variants"),
+                argumentType: z.literal("string"),
+                variants: z.array(z.object({
+                    description: z.string(),
+                    value: z.string()
                 }))
             })
         ])
@@ -27,5 +41,5 @@ export interface FunctionServer {
 
     getFunctions(): Promise<Functions>;
 
-    callFunction(functionName: string, parameters: Record<string, number>): Promise<void>;
+    callFunction(context: SessionContext, functionName: string, parameters: Record<string, number | string>): Promise<void>;
 }
