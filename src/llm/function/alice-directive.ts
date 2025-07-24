@@ -1,7 +1,6 @@
 import {FunctionInfo, Functions, SessionContext} from "../types";
 import {FunctionServer} from "./types";
 import {AliceDirective} from "../../processor";
-import {getLogger} from "../../logger";
 
 export interface AliceDirectiveFunction {
     info: FunctionInfo,
@@ -15,8 +14,6 @@ function createDirectiveFunction(info: FunctionInfo, implementation:
         implementation,
     };
 }
-
-const logger = getLogger<AliceDirectiveFunctionServer>();
 
 export class AliceDirectiveFunctionServer implements FunctionServer {
 
