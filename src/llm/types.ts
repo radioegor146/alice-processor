@@ -73,7 +73,6 @@ export type BiometryGender = "unknown" | "female" | "male";
 export interface BiometryData {
     age: BiometryAge;
     gender: BiometryGender;
-    userId?: number;
 }
 
 export interface SessionContext {

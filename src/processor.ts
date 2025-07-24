@@ -49,31 +49,7 @@ export interface SoundLouderDirective {
     type: "soundLouder";
 }
 
-export interface StartVoiceEnrollmentDirective {
-    type: "startVoiceEnrollment";
-    personId: string;
-    userId: number;
-    timeout: number;
-}
-
-export interface FinishVoiceEnrollmentDirective {
-    type: "finishVoiceEnrollment";
-    personId: string;
-    userId: number;
-}
-
-export interface CancelVoiceEnrollmentDirective {
-    type: "cancelVoiceEnrollment";
-}
-
-export interface RemoveVoiceEnrollmentDirective {
-    type: "removeVoiceEnrollment";
-    userId: number;
-}
-
-export type AliceDirective = SoundSetLevelDirective | SoundQuieterDirective | SoundLouderDirective
-    | StartVoiceEnrollmentDirective | FinishVoiceEnrollmentDirective | CancelVoiceEnrollmentDirective |
-    RemoveVoiceEnrollmentDirective;
+export type AliceDirective = SoundSetLevelDirective | SoundQuieterDirective | SoundLouderDirective;
 
 export interface ProcessorResult {
     text: string;
