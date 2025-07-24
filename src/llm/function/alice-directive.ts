@@ -1,14 +1,14 @@
-import {FunctionInfo, Functions} from "../types";
+import {FunctionInfo, Functions, SessionContext} from "../types";
 import {FunctionServer} from "./types";
 import {AliceDirective} from "../../processor";
 
 export interface AliceDirectiveFunction {
     info: FunctionInfo,
-    implementation: (input: Record<string, number>) => AliceDirective,
+    implementation: (context: SessionContext, input: Record<string, string | number>) => Promise<AliceDirective>,
 }
 
 function createDirectiveFunction(info: FunctionInfo, implementation:
-    (input: Record<string, number>) => AliceDirective): AliceDirectiveFunction {
+    (context: SessionContext, input: Record<string, string | number>) => Promise<AliceDirective>): AliceDirectiveFunction {
     return {
         info,
         implementation,
@@ -33,12 +33,14 @@ export class AliceDirectiveFunctionServer implements FunctionServer {
         throw new Error("no async calls supported");
     }
 
-    callDirectiveFunction(functionName: string, parameters: Record<string, number>): AliceDirective {
-        return this.directiveFunctions[functionName].implementation(parameters);
+    callDirectiveFunction(context: SessionContext, functionName: string,
+                          parameters: Record<string, number | string>): Promise<AliceDirective> {
+        return this.directiveFunctions[functionName].implementation(context, parameters);
     }
 }
 
-export function createAliceDirectiveFunctionServer(): AliceDirectiveFunctionServer {
+export function createAliceDirectiveFunctionServer():
+    AliceDirectiveFunctionServer {
     return new AliceDirectiveFunctionServer({
         "alice_set_volume_level": createDirectiveFunction({
             description: "sets volume level of Алиса voice assistant",
@@ -46,27 +48,28 @@ export function createAliceDirectiveFunctionServer(): AliceDirectiveFunctionServ
                 "level": {
                     description: "volume level",
                     constraints: {
-                        type: "min-max",
+                        type: "number-min-max",
+                        argumentType: "number",
                         min: 1,
                         max: 10
                     }
                 }
             }
-        }, (parameters) => ({
+        }, async (_, parameters) => ({
             type: "soundSetLevel",
-            newLevel: parameters["level"]
+            newLevel: parameters["level"] as number
         })),
         "alice_set_volume_louder": createDirectiveFunction({
             description: "makes volume level of Алиса voice assistant relatively louder",
             arguments: {}
-        }, () => ({
+        }, async () => ({
             type: "soundLouder"
         })),
         "alice_set_volume_quieter": createDirectiveFunction({
             description: "makes volume level of Алиса voice assistant relatively quieter",
             arguments: {}
-        }, () => ({
+        }, async () => ({
             type: "soundQuieter"
-        }))
+        })),
     });
 }

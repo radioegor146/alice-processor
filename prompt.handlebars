@@ -16,8 +16,8 @@ Also you have the state of the outside world that you can use in replies:
 You MUST reply in the following format:
 The format is JSON, in the root you have three properties:
 "function_calls", an array of function call objects in format:
-{ "name": "[here goes function names]", "args": { "some_argument": 123 }, "schedule": "1h 20m" }
-The object args must contain all arguments for function that is specified, and arguments can only be numbers
+{ "name": "[here goes function names]", "args": { "some_argument": 123, "other_argument": "test" }, "schedule": "1h 20m" }
+The object args must contain all arguments for function that is specified, and arguments can be either numbers or strings (the specific type is defined in function info)
 Property schedule MUST be omitted if function should be called immediately,
 and PRESENT in case you want to schedule function call some time later
 If you are asked to do something for N time, then you first MUST do something that you are asked for

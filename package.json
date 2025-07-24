@@ -10,8 +10,10 @@
     "start": "tsx src/main.ts"
   },
   "dependencies": {
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/node": "^24.0.14",
+    "cors": "^2.8.5",
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
     "handlebars": "^4.7.8",
@@ -21,5 +23,9 @@
     "typescript": "^5.8.3",
     "uuid": "^11.1.0",
     "zod": "3.25.67"
+  },
+  "devDependencies": {
+    "@types/readline-sync": "^1.4.8",
+    "readline-sync": "^1.4.10"
   }
 }
