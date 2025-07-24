@@ -331,9 +331,5 @@ export class Processor {
             description: "age of person who talked to you",
             value: request.biometry.age
         };
-        state["input_person_name"] = {
-            description: "name of person who talked to you or 'unknown' if not enrolled yet",
-            value: "unknown"
-        };
     }
 }
