@@ -159,7 +159,7 @@ export class Processor {
 
         const prompt = this.params.promptGenerator.generate(state, functions);
 
-        this.logger.info(`Received request: ${request.text}`);
+        this.logger.info(`Received request: ${JSON.stringify(request, undefined, 4)}`);
         this.logger.debug(`Prompt: ${prompt}`);
         const response = await this.params.openAI.chat.completions.create({
             model: this.params.model,
