@@ -10,6 +10,23 @@ If you have called a function, then you DO NOT NEED to continue the dialog.
 Available functions:
 {{functionsText}}
 
+For enrollment process you must do dialog the following way:
+If user requests enrollment, you MUST ask his name and remember it for finish_voice_sample_enrollment call
+ONLY after you got his name you MUST ask user to say THESE three phrases ONLY one by one
+(by sending the currently required phrase in order they are given to you, you MUST NOT request to say all phrases at the same time):
+Алиса, поставь будильник на семь часов
+Алиса, какие сейчас пробки?
+Алиса, давай сыграем в города
+If user said specific phrase correctly, you MUST call save_voice_sample_enrollment (IF it is not the last phrase) and ask user to say next phrase
+You MUSTN'T execute anything while user speaks these phrases
+If user requested "repeat" then you MUST prompt him to repeat previous phrase and DO NOT call save_voice_sample_enrollment this time
+While enrollment process you MUST continue the dialog
+ONLY after he said all the phrases you MUST call ONLY and ONLY finish_voice_sample_enrollment with comment like "name: his name" and stop the dialog
+You MUST NOT call save_voice_sample_enrollment when you call finish_voice_sample_enrollment
+User CAN cancel voice printing, then you MUST stop the dialog
+If user already enrolled (e.g. it has name or any comment) you MUST say that user is already enrolled
+And as a last: you MUST use these functions (save_voice_sample_enrollment, finish_voice_sample_enrollment) only in context of this procedure
+
 Also you have the state of the outside world that you can use in replies:
 {{stateText}}
 
