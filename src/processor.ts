@@ -2,14 +2,12 @@ import {getLogger} from "./logger";
 import {SessionStorage} from "./session-storage/types";
 import {OpenAI} from "openai";
 import {
-    BiometryData,
     FunctionArgument,
     FunctionCall,
     FunctionCallArguments,
     FunctionInfo,
     Functions, SessionContext,
-    State,
-    StructuredResponse
+    State
 } from "./llm/types";
 import {StateServer} from "./llm/state/types";
 import {FunctionServer} from "./llm/function/types";
@@ -18,7 +16,6 @@ import {randomUUID} from "node:crypto";
 import {PromptGenerator} from "./llm/prompt-generator/types";
 import {ResponseParser} from "./llm/response-parser/types";
 import {AliceDirectiveFunctionServer} from "./llm/function/alice-directive";
-import {ca} from "zod/dist/types/v4/locales";
 
 interface ProcessorParams {
     openAI: OpenAI;
@@ -33,7 +30,7 @@ interface ProcessorParams {
 export interface ProcessorRequest {
     text: string;
     sessionId?: string;
-    biometry: BiometryData;
+    metadata: object;
 }
 
 export interface SoundSetLevelDirective {
@@ -80,12 +77,12 @@ export class Processor {
     constructor(private readonly params: ProcessorParams) {
     }
 
-    private async getState(): Promise<State> {
+    private async getState(context: SessionContext): Promise<State> {
         const promises: Promise<[StateServer, State, unknown | undefined]>[] = [];
         for (const server of this.params.stateServers) {
             promises.push((async () => {
                 try {
-                    const state = await server.getState();
+                    const state = await server.getState(context);
                     return [server, state, undefined];
                 } catch (e) {
                     return [server, {}, e];
@@ -110,12 +107,12 @@ export class Processor {
         return resultState;
     }
 
-    private async getFunctions(): Promise<ExtendedFunctions> {
+    private async getFunctions(context: SessionContext): Promise<ExtendedFunctions> {
         const promises: Promise<[FunctionServer, Functions, unknown | undefined]>[] = [];
         for (const server of this.params.functionServers) {
             promises.push((async () => {
                 try {
-                    const functions = await server.getFunctions();
+                    const functions = await server.getFunctions(context);
                     return [server, functions, undefined];
                 } catch (e) {
                     return [server, {}, e];
@@ -153,14 +150,12 @@ export class Processor {
 
         const context: SessionContext = {
             id: sessionId,
-            biometry: request.biometry
+            metadata: request.metadata
         };
 
-        const state = await this.getState();
+        const state = await this.getState(context);
 
-        this.fillStateFromRequest(state, request);
-
-        const functions = await this.getFunctions();
+        const functions = await this.getFunctions(context);
 
         const prompt = this.params.promptGenerator.generate(state, functions);
 
@@ -320,16 +315,5 @@ export class Processor {
                 break;
         }
         return true;
-    }
-
-    private fillStateFromRequest(state: State, request: ProcessorRequest): void {
-        state["input_person_gender"] = {
-            description: "gender of person who talked to you",
-            value: request.biometry.gender
-        };
-        state["input_person_age"] = {
-            description: "age of person who talked to you",
-            value: request.biometry.age
-        };
     }
 }

@@ -6,8 +6,6 @@ const openAI = new OpenAI({
     apiKey: "sk-c1kemAGsqUmO2yARpaXSVg",
 });
 
-// const promptGenerator = new PromptGenerator(fs.readFileSync("bnf/prompt"));
-
 (async () => {
     const response = await openAI.chat.completions.create({
         model: "Qwen2.5-Coder-32B-Instruct",

@@ -9,15 +9,23 @@ export class RemoteFunctionServer implements FunctionServer {
         return `remote{${this.url}}`;
     }
 
-    async getFunctions(): Promise<Functions> {
-        return functionsType.parse(await (await fetch(this.url)).json());
+    async getFunctions(context: SessionContext): Promise<Functions> {
+        return functionsType.parse(await (await fetch(this.url, {
+            method: "POST",
+            body: JSON.stringify({
+                context
+            }),
+            headers: {
+                "content-type": "application/json"
+            }
+        })).json());
     }
 
     async callFunction(context: SessionContext, name: string, parameters: Record<string, number | string>): Promise<void> {
         await fetch(this.url, {
-            method: "POST",
+            method: "PATCH",
             body: JSON.stringify({
-                sessionContext: context,
+                context,
                 name,
                 parameters
             }),

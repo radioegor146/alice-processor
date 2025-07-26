@@ -41,10 +41,7 @@ app.use(cors());
 const requestType = z.object({
     text: z.string(),
     sessionId: z.string().uuid().optional(),
-    biometry: z.object({
-        age: z.union([z.literal("unknown"), z.literal("adult"), z.literal("child")]),
-        gender: z.union([z.literal("unknown"), z.literal("female"), z.literal("male")])
-    })
+    metadata: z.object({})
 });
 
 const openAI = new OpenAI({

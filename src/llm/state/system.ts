@@ -1,4 +1,4 @@
-import {State} from "../types";
+import {SessionContext, State} from "../types";
 import {StateServer} from "./types";
 
 export class SystemStateServer implements StateServer {
@@ -7,11 +7,19 @@ export class SystemStateServer implements StateServer {
         return "system";
     }
 
-    async getState(): Promise<State> {
+    async getState(context: SessionContext): Promise<State> {
         return {
             "date_time": {
                 description: "current time and date in DD-MM-YYYY HH:MM:SS format",
                 value: this.getCurrentTimeAndDateFormatted()
+            },
+            "input_person_gender": {
+                description: "gender of person who talked to you",
+                value: (context.metadata as any)["gender"] ?? "unknown"
+            },
+            "input_person_age": {
+                description: "age of person who talked to you",
+                value: (context.metadata as any)["age"] ?? "unknown"
             }
         };
     }

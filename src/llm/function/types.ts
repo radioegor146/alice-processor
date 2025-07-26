@@ -39,7 +39,7 @@ export const functionsType = z.record(z.object({
 export interface FunctionServer {
     getName(): string;
 
-    getFunctions(): Promise<Functions>;
+    getFunctions(context: SessionContext): Promise<Functions>;
 
     callFunction(context: SessionContext, functionName: string, parameters: Record<string, number | string>): Promise<void>;
 }

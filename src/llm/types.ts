@@ -66,16 +66,7 @@ export interface StructuredResponse {
     requireMoreInput: boolean;
     text: string;
 }
-
-export type BiometryAge = "unknown" | "child" | "adult";
-export type BiometryGender = "unknown" | "female" | "male";
-
-export interface BiometryData {
-    age: BiometryAge;
-    gender: BiometryGender;
-}
-
 export interface SessionContext {
     id: string;
-    biometry: BiometryData;
+    metadata: object;
 }
