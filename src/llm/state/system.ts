@@ -8,7 +8,6 @@ export class SystemStateServer implements StateServer {
     }
 
     async getState(context: SessionContext): Promise<State> {
-        console.info(context.metadata);
         return {
             "date_time": {
                 description: "current time and date in DD-MM-YYYY HH:MM:SS format",

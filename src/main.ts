@@ -41,7 +41,7 @@ app.use(cors());
 const requestType = z.object({
     text: z.string(),
     sessionId: z.string().uuid().optional(),
-    metadata: z.object({})
+    metadata: z.record(z.any())
 });
 
 const openAI = new OpenAI({
