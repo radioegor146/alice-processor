@@ -12,7 +12,7 @@ async function doRequest (request: ProcessorRequest): Promise<ProcessorResult> {
     },
     method: 'POST'
   })
-  return await response.json()
+  return await response.json() as ProcessorResult
 }
 
 (async () => {
