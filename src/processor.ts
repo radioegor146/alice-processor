@@ -75,7 +75,7 @@ export class Processor {
   }
 
   async process (request: ProcessorRequest): Promise<ProcessorResult> {
-    const isNewRequest = !!request.sessionId
+    const isNewRequest = !request.sessionId
     const text = request.text.trim()
     const sessionId = request.sessionId ?? randomUUID()
     const previousMessages = await this.parameters.sessionStorage.load(sessionId) ?? []
