@@ -14,8 +14,7 @@ import {
   FunctionCallArguments,
   FunctionInfo,
   Functions, SessionContext,
-  State,
-  StructuredResponse
+  State
 } from './llm/types'
 import { getLogger } from './logger'
 import { SessionStorage } from './session-storage/types'
@@ -77,10 +76,11 @@ export class Processor {
 
   async process (request: ProcessorRequest): Promise<ProcessorResult> {
     const isNewRequest = !!request.sessionId
+    const text = request.text.trim()
     const sessionId = request.sessionId ?? randomUUID()
     const previousMessages = await this.parameters.sessionStorage.load(sessionId) ?? []
     previousMessages.push({
-      content: request.text,
+      content: text,
       role: 'user'
     })
 
@@ -99,7 +99,7 @@ export class Processor {
 
     let responseContent: string
 
-    const cachedResponse = this.cache.get(request.text)
+    const cachedResponse = this.cache.get(text)
     if (isNewRequest && cachedResponse) {
       responseContent = cachedResponse
       this.logger.info(`Received answer from cache: ${responseContent}`)
@@ -130,7 +130,8 @@ export class Processor {
 
     const structuredResponse = this.parameters.responseParser.parse(responseContent)
     if (!structuredResponse.requireMoreInput && structuredResponse.canCache && isNewRequest) {
-      this.cache.set(request.text, responseContent)
+      this.cache.set(text, responseContent)
+      this.logger.info(`Saved answer to cache: '${text}' -> ${responseContent}`)
     }
     const [directives, functionPromises] =
             await this.callFunctions(context, functions, structuredResponse.functionCalls)

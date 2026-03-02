@@ -51,6 +51,7 @@ export class FunctionCallFormatResponseParser implements ResponseParser {
     }
 
     return {
+      canCache: false,
       functionCalls: functionCalls.map(([name, parsedParameters]) => ({
         name,
         parameters: parsedParameters
