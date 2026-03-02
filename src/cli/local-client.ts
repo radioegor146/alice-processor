@@ -1,37 +1,40 @@
-import readlineSync from "readline-sync";
-import {ProcessorRequest, ProcessorResult} from "../processor";
+import readlineSync from 'readline-sync'
 
-const ENDPOINT = "http://localhost:8080/process";
+import { ProcessorRequest, ProcessorResult } from '../processor'
 
-async function doRequest(request: ProcessorRequest): Promise<ProcessorResult> {
-    return await (await fetch(ENDPOINT, {
-        method: "POST",
-        body: JSON.stringify(request),
-        headers: {
-            "content-type": "application/json"
-        }
-    })).json();
+const ENDPOINT = 'http://localhost:8080/process'
+
+async function doRequest (request: ProcessorRequest): Promise<ProcessorResult> {
+  const response = await fetch(ENDPOINT, {
+    body: JSON.stringify(request),
+    headers: {
+      'content-type': 'application/json'
+    },
+    method: 'POST'
+  })
+  return await response.json()
 }
 
 (async () => {
-    let sessionId: undefined | string = undefined;
-    const age = "adult";
-    const gender = "male";
+  let sessionId: string | undefined
+  const age = 'adult'
+  const gender = 'male'
 
-    while (true) {
-        const text = readlineSync.question("Input: ");
-        const result = await doRequest({
-            text,
-            sessionId,
-            biometry: {
-                age,
-                gender
-            }
-        });
-        console.info("Output:", result);
-        sessionId = result.sessionId;
-        if (!result.requireMoreInput) {
-            return;
-        }
+  while (true) {
+    const text = readlineSync.question('Input: ')
+    const result = await doRequest({
+      metadata: {
+        age,
+        gender
+      },
+      sessionId,
+      text
+    })
+    console.info('Output:', result)
+    sessionId = result.sessionId
+    if (!result.requireMoreInput) {
+      return
     }
-})().catch(e => console.error(e));
+  }
+// eslint-disable-next-line unicorn/prefer-top-level-await
+})().catch(error => console.error(error))

@@ -1,5 +1,5 @@
-import {StructuredResponse} from "../types";
+import { StructuredResponse } from '../types'
 
 export interface ResponseParser {
-    parse(text: string): StructuredResponse;
+  parse(text: string): StructuredResponse;
 }

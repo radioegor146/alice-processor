@@ -1,25 +1,25 @@
-import {OpenAI} from "openai";
-import fs from "fs";
+import fs from 'node:fs'
+import { OpenAI } from 'openai'
 
 const openAI = new OpenAI({
-    baseURL: "https://llm.bksp.in",
-    apiKey: "sk-c1kemAGsqUmO2yARpaXSVg",
+  apiKey: 'sk-c1kemAGsqUmO2yARpaXSVg',
+  baseURL: 'https://llm.bksp.in',
 });
 
 (async () => {
-    const response = await openAI.chat.completions.create({
-        model: "Qwen2.5-Coder-32B-Instruct",
-        messages: [
-            {
-                role: "system",
-                content: fs.readFileSync("bnf/prompt.en.txt").toString("utf8")
-            },
-            {
-                role: "user",
-                content: "сколько времени"
-            }
-        ],
-    });
+  const response = await openAI.chat.completions.create({
+    messages: [
+      {
+        content: fs.readFileSync('bnf/prompt.en.txt').toString('utf8'),
+        role: 'system'
+      },
+      {
+        content: 'сколько времени',
+        role: 'user'
+      }
+    ],
+    model: 'Qwen2.5-Coder-32B-Instruct',
+  })
 
-    console.info(response.choices[0].message.content);
-})().catch(e => console.error(e));
+  console.info(response.choices[0].message.content)
+})().catch(error => console.error(error))

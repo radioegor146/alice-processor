@@ -1,72 +1,73 @@
-export interface FunctionArgumentValueNumberMinMaxConstraints {
-    type: "number-min-max";
-    argumentType: "number";
-    min: number;
-    max: number;
-}
-
-export interface FunctionArgumentValueNumberVariantsConstraints {
-    type: "number-variants";
-    argumentType: "number";
-    variants: {
-        value: number;
-        description: string;
-    }[];
-}
-
-export interface FunctionArgumentValueStringNotEmptyConstraints {
-    type: "string-not-empty";
-    argumentType: "string";
-}
-
-export interface FunctionArgumentValueStringVariantsConstraints {
-    type: "string-variants";
-    argumentType: "string";
-    variants: {
-        value: string;
-        description: string;
-    }[];
+export interface FunctionArgument {
+  constraints: FunctionArgumentValueConstraints;
+  description: string;
 }
 
 export type FunctionArgumentValueConstraints =
     FunctionArgumentValueNumberMinMaxConstraints
     | FunctionArgumentValueNumberVariantsConstraints
     | FunctionArgumentValueStringNotEmptyConstraints
-    | FunctionArgumentValueStringVariantsConstraints;
+    | FunctionArgumentValueStringVariantsConstraints
 
-export interface FunctionArgument {
-    description: string;
-    constraints: FunctionArgumentValueConstraints;
+export interface FunctionArgumentValueNumberMinMaxConstraints {
+  argumentType: 'number';
+  max: number;
+  min: number;
+  type: 'number-min-max';
 }
 
-export interface FunctionInfo {
+export interface FunctionArgumentValueNumberVariantsConstraints {
+  argumentType: 'number';
+  type: 'number-variants';
+  variants: {
     description: string;
-    arguments: Record<string, FunctionArgument>;
+    value: number;
+  }[];
 }
 
-export type Functions = Record<string, FunctionInfo>;
+export interface FunctionArgumentValueStringNotEmptyConstraints {
+  argumentType: 'string';
+  type: 'string-not-empty';
+}
 
-export interface StateEntry {
+export interface FunctionArgumentValueStringVariantsConstraints {
+  argumentType: 'string';
+  type: 'string-variants';
+  variants: {
     description: string;
     value: string;
+  }[];
 }
-
-export type State = Record<string, StateEntry>;
-
-export type FunctionCallArguments = Record<string, string | number>;
 
 export interface FunctionCall {
-    name: string;
-    parameters: FunctionCallArguments;
-    schedule?: number;
+  name: string;
+  parameters: FunctionCallArguments;
+  schedule?: number;
 }
 
-export interface StructuredResponse {
-    functionCalls: FunctionCall[];
-    requireMoreInput: boolean;
-    text: string;
+export type FunctionCallArguments = Record<string, number | string>
+
+export interface FunctionInfo {
+  arguments: Record<string, FunctionArgument>;
+  description: string;
 }
+
+export type Functions = Record<string, FunctionInfo>
+
 export interface SessionContext {
-    id: string;
-    metadata: object;
+  id: string;
+  metadata: object;
+}
+
+export type State = Record<string, StateEntry>
+
+export interface StateEntry {
+  description: string;
+  value: string;
+}
+export interface StructuredResponse {
+  canCache: boolean;
+  functionCalls: FunctionCall[];
+  requireMoreInput: boolean;
+  text: string;
 }
