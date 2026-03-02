@@ -129,7 +129,7 @@ export class Processor {
     await this.parameters.sessionStorage.save(sessionId, previousMessages)
 
     const structuredResponse = this.parameters.responseParser.parse(responseContent)
-    if (structuredResponse.canCache && isNewRequest) {
+    if (!structuredResponse.requireMoreInput && structuredResponse.canCache && isNewRequest) {
       this.cache.set(request.text, responseContent)
     }
     const [directives, functionPromises] =
