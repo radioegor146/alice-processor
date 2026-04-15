@@ -22,6 +22,7 @@ import { SessionStorage } from './session-storage/types'
 export type AliceDirective = SoundLouderDirective | SoundQuieterDirective | SoundSetLevelDirective
 
 export interface ProcessorRequest {
+  isExternalEvent?: boolean;
   metadata: object;
   sessionId?: string | undefined;
   text: string;
@@ -79,10 +80,18 @@ export class Processor {
     const text = request.text.trim()
     const sessionId = request.sessionId ?? randomUUID()
     const previousMessages = await this.parameters.sessionStorage.load(sessionId) ?? []
-    previousMessages.push({
-      content: text,
-      role: 'user'
-    })
+
+    if (request.isExternalEvent) {
+      previousMessages.push({
+        content: `External event happened: '${text}'`,
+        role: 'system'
+      })
+    } else {
+      previousMessages.push({
+        content: text,
+        role: 'user'
+      })
+    }
 
     const context: SessionContext = {
       id: sessionId,

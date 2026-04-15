@@ -42,9 +42,10 @@ const app = express()
 app.use(cors())
 
 const requestType = z.object({
+  isExternalEvent: z.boolean().optional(),
   metadata: z.record(z.any()),
   sessionId: z.string().uuid().optional(),
-  text: z.string()
+  text: z.string(),
 })
 
 const openAI = new OpenAI({
