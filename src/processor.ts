@@ -130,7 +130,7 @@ export class Processor {
 
     this.logger.info(`Received request: ${JSON.stringify(request, undefined, 4)}`)
 
-    let responseContent: string
+    let responseContent: string = ""
 
     const cachedResponse = this.cache.get(text)
     if (isNewRequest && cachedResponse) {
@@ -141,13 +141,16 @@ export class Processor {
         messages: [
           ...previousMessages
         ],
-        model: this.parameters.model
+        model: this.parameters.model,
+        stream: true
       })
 
-      const [choice] = response.choices
-      responseContent = choice?.message?.content ?? ''
+      for await (const result of response) {
+        responseContent += result.choices[0]?.delta?.content
+        this.logger.info(`Received streaming answer from LLM: '${responseContent}'`)
+      }
 
-      this.logger.info(`Received answer from LLM: ${responseContent}`)
+      this.logger.info(`Received answer from LLM: '${responseContent}'`)
     }
 
     previousMessages.push({
