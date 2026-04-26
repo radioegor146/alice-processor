@@ -137,6 +137,7 @@ export class Processor {
       responseContent = cachedResponse
       this.logger.info(`Received answer from cache: ${responseContent}`)
     } else {
+      this.logger.info('Querying LLM')
       const response = await this.parameters.openAI.chat.completions.create({
         messages: [
           ...previousMessages
