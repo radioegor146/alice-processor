@@ -146,7 +146,11 @@ export class Processor {
       })
 
       for await (const result of response) {
-        responseContent += result.choices[0]?.delta?.content
+        const part = result.choices[0]?.delta?.content
+        if (!part) {
+          continue
+        }
+        responseContent += part
         this.logger.info(`Received streaming answer from LLM: '${responseContent}'`)
       }
 
