@@ -21,8 +21,16 @@ import { SessionStorage } from './session-storage/types'
 
 export type AliceDirective = SoundLouderDirective | SoundQuieterDirective | SoundSetLevelDirective
 
+export interface ProcessorPrepareRequest {
+  sessionId?: string | undefined;
+}
+
+export interface ProcessorPrepareResponse {
+  sessionId?: string | undefined;
+}
+
 export interface ProcessorRequest {
-  isExternalEvent?: boolean;
+  isExternalEvent?: boolean | undefined;
   metadata: object;
   sessionId?: string | undefined;
   text: string;
@@ -75,11 +83,38 @@ export class Processor {
     })
   }
 
+  async prepare (request: ProcessorPrepareRequest): Promise<ProcessorPrepareResponse> {
+    return {
+      sessionId: request.sessionId
+    }
+  }
+
   async process (request: ProcessorRequest): Promise<ProcessorResult> {
     const isNewRequest = !request.sessionId
+
     const text = request.text.trim()
     const sessionId = request.sessionId ?? randomUUID()
     const previousMessages = await this.parameters.sessionStorage.load(sessionId) ?? []
+
+    const context: SessionContext = {
+      id: sessionId,
+      metadata: request.metadata
+    }
+
+    const functions = await this.getFunctions(context)
+
+    if (isNewRequest) {
+      previousMessages.push({
+        content: this.parameters.promptGenerator.generate(functions),
+        role: 'system'
+      })
+    }
+
+    const state = await this.getState(context)
+    previousMessages.push({
+      content: this.parameters.promptGenerator.generateState(state),
+      role: 'system'
+    }) 
 
     if (request.isExternalEvent) {
       previousMessages.push({
@@ -93,17 +128,6 @@ export class Processor {
       })
     }
 
-    const context: SessionContext = {
-      id: sessionId,
-      metadata: request.metadata
-    }
-
-    const state = await this.getState(context)
-
-    const functions = await this.getFunctions(context)
-
-    const prompt = this.parameters.promptGenerator.generate(state, functions)
-
     this.logger.info(`Received request: ${JSON.stringify(request, undefined, 4)}`)
 
     let responseContent: string
@@ -113,13 +137,8 @@ export class Processor {
       responseContent = cachedResponse
       this.logger.info(`Received answer from cache: ${responseContent}`)
     } else {
-      this.logger.debug(`Prompt: ${prompt}`)
       const response = await this.parameters.openAI.chat.completions.create({
         messages: [
-          {
-            content: prompt,
-            role: 'system'
-          },
           ...previousMessages
         ],
         model: this.parameters.model

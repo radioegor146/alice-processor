@@ -1,5 +1,6 @@
 import { Functions, State } from '../types'
 
 export interface PromptGenerator {
-  generate(state: State, functions: Functions): string;
+  generate(functions: Functions): string;
+  generateState(state: State): string;
 }

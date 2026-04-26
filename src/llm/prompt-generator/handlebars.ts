@@ -5,17 +5,26 @@ import { PromptGenerator } from './types'
 
 export class HandlebarsPromptGenerator implements PromptGenerator {
   private readonly template: HandlebarsTemplateDelegate
+  private readonly stateTemplate: HandlebarsTemplateDelegate
 
-  constructor (private readonly rawTemplate: string) {
+  constructor (private readonly rawTemplate: string, private readonly rawStateTemplate: string) {
     this.template = Handlebars.compile(rawTemplate, {
+      noEscape: true
+    })
+    this.stateTemplate = Handlebars.compile(rawStateTemplate, {
       noEscape: true
     })
   }
 
-  generate (state: State, functions: Functions): string {
-    return this.template({
-      functionsText: this.getFunctionsText(functions),
+  generateState(state: State): string {
+    return this.stateTemplate({
       stateText: this.getStateText(state)
+    })
+  }
+
+  generate (functions: Functions): string {
+    return this.template({
+      functionsText: this.getFunctionsText(functions)
     })
   }
 
@@ -36,7 +45,6 @@ export class HandlebarsPromptGenerator implements PromptGenerator {
                     `"${variant.value}" (${variant.description})`).join('|')
       }
     }
-    return '(any number)'
   }
 
   private getFunctionArgumentsText (argumentMap: Record<string, FunctionArgument>): string {

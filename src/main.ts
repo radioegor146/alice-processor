@@ -32,6 +32,7 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? ''
 const OPENAI_MODEL = process.env.OPENAI_MODEL ?? 'qwen2.5-coder-7b-instruct'
 
 const PROCESSOR_PROMPT_TEMPLATE_PATH = process.env.PROMPT_TEMPLATE_PATH ?? 'prompt.handlebars'
+const PROCESSOR_STATE_PROMPT_TEMPLATE_PATH = process.env.STATE_PROMPT_TEMPLATE_PATH ?? 'prompt-state.handlebars'
 const PROCESSOR_FUNCTION_SERVER_URLS = (process.env.PROCESSOR_FUNCTION_SERVER_URLS ?? '').split(',').filter(Boolean)
 const PROCESSOR_STATE_SERVER_URLS = (process.env.PROCESSOR_STATE_SERVER_URLS ?? '').split(',').filter(Boolean)
 
@@ -46,6 +47,10 @@ const requestType = z.object({
   metadata: z.record(z.any()),
   sessionId: z.string().uuid().optional(),
   text: z.string(),
+})
+
+const prepareRequestType = z.object({
+  sessionId: z.string().uuid().optional()
 })
 
 const openAI = new OpenAI({
@@ -68,7 +73,9 @@ for (const url of PROCESSOR_FUNCTION_SERVER_URLS) {
 }
 
 const promptGenerator = new HandlebarsPromptGenerator(
-  fs.readFileSync(PROCESSOR_PROMPT_TEMPLATE_PATH).toString('utf8'))
+  fs.readFileSync(PROCESSOR_PROMPT_TEMPLATE_PATH).toString('utf8'),
+  fs.readFileSync(PROCESSOR_STATE_PROMPT_TEMPLATE_PATH).toString('utf8')
+)
 
 const sessionStorage = new InMemorySessionStorage<ChatCompletionMessageParam[]>()
 
@@ -89,6 +96,30 @@ app.use(express.json())
 app.post('/process', (request, response) => {
   try {
     processor.process(requestType.parse(request.body))
+      .then(result => {
+        response.status(200).json({
+          success: true,
+          ...result
+        })
+      })
+      .catch(error => {
+        logger.error(`Processor error: ${error}`)
+        response.status(500).json({
+          error: error.toString(),
+          success: false
+        })
+      })
+  } catch (error) {
+    logger.error(`Processor error: ${error}`)
+    response.status(500).json({
+      error: String(error),
+      success: false
+    })
+  }
+})
+app.patch('/process', (request, response) => {
+  try {
+    processor.prepare(prepareRequestType.parse(request.body))
       .then(result => {
         response.status(200).json({
           success: true,

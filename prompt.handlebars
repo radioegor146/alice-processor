@@ -31,9 +31,6 @@ You MUST use these functions (save_voice_sample_enrollment, finish_voice_sample_
 If user already enrolled (it has name or any comment) you MUST say that user is already enrolled and MUST STOP enrollment process and NOT CONTINUE any further
 You can do enrollment process ONLY if voiceprint_user_comment is unknown, otherwise YOU MUST STOP AND FORBID
 
-Also you have the state of the outside world that you can use in replies:
-{{stateText}}
-
 You MUST reply in the following format:
 The format is JSON, in the root you have three properties:
 "function_calls", an array of function call objects in format:
