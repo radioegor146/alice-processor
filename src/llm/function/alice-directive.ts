@@ -44,20 +44,20 @@ AliceDirectiveFunctionServer {
           description: 'volume level'
         }
       },
-      description: 'sets volume level of Алиса voice assistant'
+      description: 'sets volume level of Алиса voice assistant, use this method only when user directly asks for your volume'
     }, async (_, parameters) => ({
       newLevel: parameters['level'] as number,
       type: 'soundSetLevel'
     })),
     alice_set_volume_louder: createDirectiveFunction({
       arguments: {},
-      description: 'makes volume level of Алиса voice assistant relatively louder'
+      description: 'makes volume level of Алиса voice assistant relatively louder, use this method only when user directly asks for your volume'
     }, async () => ({
       type: 'soundLouder'
     })),
     alice_set_volume_quieter: createDirectiveFunction({
       arguments: {},
-      description: 'makes volume level of Алиса voice assistant relatively quieter'
+      description: 'makes volume level of Алиса voice assistant relatively quieter, use this method only when user directly asks for your volume'
     }, async () => ({
       type: 'soundQuieter'
     })),
