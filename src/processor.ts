@@ -167,15 +167,28 @@ export class Processor {
 
       const stream = schemaStream.parse()
 
-      for await (const result of response) {
-        const part = result.choices[0]?.delta?.content
-        if (!part) {
-          continue
+      response.toReadableStream().pipeTo(stream.writable)
+
+      const reader = stream.readable.getReader()
+      for (;;) {
+        const { value, done } = await reader.read()
+        if (done) {
+          break;
         }
-        responseContent += part
-        await stream.writable.getWriter().write(part)
-        this.logger.info(`Received streaming answer from LLM: '${responseContent}'`)
+        console.info(value)
       }
+
+      // for await (const result of response) {
+      //   const part = result.choices[0]?.delta?.content
+      //   if (!part) {
+      //     continue
+      //   }
+      //   responseContent += part
+      //   await stream.writable.getWriter().write(part)
+      //   this.logger.info(`Received streaming answer from LLM: '${responseContent}'`)
+      // }
+
+      responseContent = ''
 
       this.logger.info(`Received answer from LLM: '${responseContent}'`)
     }
