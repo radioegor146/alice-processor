@@ -10,6 +10,7 @@
     "start": "tsx src/main.ts"
   },
   "dependencies": {
+    "@streamparser/json": "^0.0.22",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/node": "^24.0.14",

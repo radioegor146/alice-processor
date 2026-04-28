@@ -20,6 +20,7 @@ import { getLogger } from './logger'
 import { SessionStorage } from './session-storage/types'
 import z from "zod"
 import { SchemaStream } from 'schema-stream'
+import { JSONParser } from '@streamparser/json'
 
 export type AliceDirective = SoundLouderDirective | SoundQuieterDirective | SoundSetLevelDirective
 
@@ -174,41 +175,21 @@ export class Processor {
         model: this.parameters.model,
         stream: true
       })
+      
+      const jsonParser = new JSONParser()
+      jsonParser.onValue = (((value) => {
+        console.info(value)
+      }))
 
-      const schemaStream = new SchemaStream(llmResponseType, {
-        onKeyComplete: (params) => {
-          console.info(JSON.stringify(params))
+      for await (const chunk of response) {
+        const part = chunk.choices[0]?.delta?.content
+        if (!part) {
+          continue
         }
-      })
-
-      const t = schemaStream['handleToken']
-      schemaStream['handleToken'] = (d: any) => {
-        console.info(d)
-        t.call(schemaStream, d)
+        responseContent += part
+        jsonParser.write(part)
+        this.logger.info(`Received streaming answer from LLM: '${responseContent}'`)
       }
-
-      const stream = schemaStream.parse()
-
-      const reader = response.toReadableStream().pipeThrough(new OpenAITransformStream()).pipeThrough(stream).getReader()
-      for (;;) {
-        const { value, done } = await reader.read()
-        if (done) {
-          break;
-        }
-        console.info(Buffer.from(value).toString('utf8'))
-      }
-
-      // for await (const result of response) {
-      //   const part = result.choices[0]?.delta?.content
-      //   if (!part) {
-      //     continue
-      //   }
-      //   responseContent += part
-      //   await stream.writable.getWriter().write(part)
-      //   this.logger.info(`Received streaming answer from LLM: '${responseContent}'`)
-      // }
-
-      responseContent = ''
 
       this.logger.info(`Received answer from LLM: '${responseContent}'`)
     }
