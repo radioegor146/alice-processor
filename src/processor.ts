@@ -86,6 +86,21 @@ const llmResponseType = z.object({
   text: z.string().optional()
 })
 
+class OpenAITransformStream extends TransformStream {
+  constructor() {
+    super({
+      transform(chunk, controller) {
+        const part = chunk.choices[0]?.delta?.content
+        if (!part) {
+          controller.terminate()
+          return
+        }
+        controller.enqueue(part)
+      }
+    })
+  }
+}
+
 export class Processor {
   private readonly cache: LRUCache<string, string>
   private readonly logger = getLogger<Processor>()
@@ -167,7 +182,10 @@ export class Processor {
 
       const stream = schemaStream.parse()
 
-      response.toReadableStream().pipeTo(stream.writable)
+      const transformer = new OpenAITransformStream()
+
+      response.toReadableStream().pipeTo(transformer.writable)
+      transformer.readable.pipeTo(stream.writable)
 
       const reader = stream.readable.getReader()
       for (;;) {
