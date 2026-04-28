@@ -18,6 +18,8 @@ import {
 } from './llm/types'
 import { getLogger } from './logger'
 import { SessionStorage } from './session-storage/types'
+import z from "zod"
+import { SchemaStream } from 'schema-stream'
 
 export type AliceDirective = SoundLouderDirective | SoundQuieterDirective | SoundSetLevelDirective
 
@@ -72,6 +74,17 @@ interface ProcessorParameters {
   sessionStorage: SessionStorage<ChatCompletionMessageParam[]>;
   stateServers: StateServer[];
 }
+
+const llmResponseType = z.object({
+  can_cache: z.boolean().optional(),
+  continue_dialog: z.boolean().optional(),
+  function_calls: z.array(z.object({
+    args: z.record(z.union([z.number(), z.string()])),
+    name: z.string(),
+    schedule: z.string().optional()
+  })).optional(),
+  text: z.string().optional()
+})
 
 export class Processor {
   private readonly cache: LRUCache<string, string>
@@ -146,12 +159,21 @@ export class Processor {
         stream: true
       })
 
+      const schemaStream = new SchemaStream(llmResponseType, {
+        onKeyComplete: (params) => {
+          console.info(JSON.stringify(params))
+        }
+      })
+
+      const stream = schemaStream.parse()
+
       for await (const result of response) {
         const part = result.choices[0]?.delta?.content
         if (!part) {
           continue
         }
         responseContent += part
+        await stream.writable.getWriter().write(part)
         this.logger.info(`Received streaming answer from LLM: '${responseContent}'`)
       }
 
