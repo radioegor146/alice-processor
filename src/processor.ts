@@ -90,8 +90,8 @@ class OpenAITransformStream extends TransformStream {
   constructor() {
     super({
       transform(chunk, controller) {
-        console.info(Buffer.from(chunk).toString('utf8'))
-        const part = chunk.choices[0]?.delta?.content
+        const parsedChunk = JSON.parse(Buffer.from(chunk).toString('utf8'))
+        const part = parsedChunk.choices[0]?.delta?.content
         if (!part) {
           controller.terminate()
           return
