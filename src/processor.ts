@@ -183,12 +183,7 @@ export class Processor {
 
       const stream = schemaStream.parse()
 
-      const transformer = new OpenAITransformStream()
-
-      response.toReadableStream().pipeTo(transformer.writable)
-      transformer.readable.pipeTo(stream.writable)
-
-      const reader = stream.readable.getReader()
+      const reader = response.toReadableStream().pipeThrough(new OpenAITransformStream()).pipeThrough(stream).getReader()
       for (;;) {
         const { value, done } = await reader.read()
         if (done) {
