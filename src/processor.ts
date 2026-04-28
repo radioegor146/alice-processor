@@ -6,7 +6,6 @@ import { ChatCompletionMessageParam } from 'openai/src/resources/chat/completion
 import { AliceDirectiveFunctionServer } from './llm/function/alice-directive'
 import { FunctionServer } from './llm/function/types'
 import { PromptGenerator } from './llm/prompt-generator/types'
-import { ResponseParser } from './llm/response-parser/types'
 import { StateServer } from './llm/state/types'
 import {
   FunctionArgument,
@@ -14,13 +13,15 @@ import {
   FunctionCallArguments,
   FunctionInfo,
   Functions, SessionContext,
-  State
+  State,
+  StructuredResponse
 } from './llm/types'
 import { getLogger } from './logger'
 import { SessionStorage } from './session-storage/types'
 import z from "zod"
-import { SchemaStream } from 'schema-stream'
 import { JSONParser } from '@streamparser/json'
+
+const logger = getLogger()
 
 export type AliceDirective = SoundLouderDirective | SoundQuieterDirective | SoundSetLevelDirective
 
@@ -71,35 +72,81 @@ interface ProcessorParameters {
   model: string;
   openAI: OpenAI;
   promptGenerator: PromptGenerator;
-  responseParser: ResponseParser;
   sessionStorage: SessionStorage<ChatCompletionMessageParam[]>;
   stateServers: StateServer[];
 }
 
-const llmResponseType = z.object({
-  can_cache: z.boolean().optional(),
-  continue_dialog: z.boolean().optional(),
-  function_calls: z.array(z.object({
+const functionCallType = z.object({
     args: z.record(z.union([z.number(), z.string()])),
     name: z.string(),
     schedule: z.string().optional()
-  })).optional(),
+  })
+
+const llmResponseType = z.object({
+  can_cache: z.boolean().optional(),
+  continue_dialog: z.boolean().optional(),
+  function_calls: z.array(functionCallType).optional(),
   text: z.string().optional()
 })
 
-class OpenAITransformStream extends TransformStream {
-  constructor() {
-    super({
-      transform(chunk, controller) {
-        const parsedChunk = JSON.parse(Buffer.from(chunk).toString('utf8'))
-        const part = parsedChunk.choices[0]?.delta?.content
-        if (!part) {
-          controller.terminate()
-          return
-        }
-        controller.enqueue(part)
+const scheduleTimeRegexes: { coefficient: number; regex: RegExp, }[] = [
+  {
+    coefficient: 1, regex: /^(?<value>[.\d]+)ms$/
+  },
+  {
+    coefficient: 1000, regex: /^(?<value>[.\d]+)s$/
+  },
+  {
+    coefficient: 60 * 1000, regex: /^(?<value>[.\d]+)m$/
+  },
+  {
+    coefficient: 60 * 60 * 1000, regex: /^(?<value>[.\d]+)h$/
+  },
+  {
+    coefficient: 24 * 60 * 60 * 1000, regex: /^(?<value>[.\d]+)d$/
+  },
+]
+
+function parseSchedule (schedule: string): number {
+  const parts = schedule.split(' ').filter(Boolean)
+  let result = 0
+  for (const part of parts) {
+    let matched = false
+    for (const { coefficient, regex } of scheduleTimeRegexes) {
+      const match = part.match(regex)
+      if (!match) {
+        continue
       }
-    })
+      matched = true
+      result += coefficient * Number.parseFloat(match.groups?.value ?? '0')
+    }
+    if (!matched) {
+      logger.warn(`Failed to parse 'schedule' part from LLM: '${part}'`)
+    }
+  }
+  return result
+}
+
+function parseFunctionCall(rawCall: unknown): FunctionCall {
+  const call = functionCallType.parse(rawCall)
+  return {
+    name: call.name,
+    parameters: call.args,
+    ...(call.schedule
+      ? {
+          schedule: parseSchedule(call.schedule)
+        }
+      : {})
+  }
+}
+
+function parseLLMResponse(rawResponse: unknown): StructuredResponse {
+  const response = llmResponseType.parse(rawResponse)
+  return {
+    canCache: response.can_cache ?? false,
+    functionCalls: response.function_calls?.map(call => parseFunctionCall(call)) ?? [],
+    requireMoreInput: response.continue_dialog ?? false,
+    text: response.text ?? ""
   }
 }
 
@@ -163,10 +210,17 @@ export class Processor {
     let responseContent: string = ""
 
     const cachedResponse = this.cache.get(text)
+
+    let doFunctionCallsOnline = false
+
+    const directives: AliceDirective[] = []
+
     if (isNewRequest && cachedResponse) {
+      doFunctionCallsOnline = false
       responseContent = cachedResponse
       this.logger.info(`Received answer from cache: ${responseContent}`)
     } else {
+      doFunctionCallsOnline = true
       this.logger.info('Querying LLM')
       const response = await this.parameters.openAI.chat.completions.create({
         messages: [
@@ -175,10 +229,16 @@ export class Processor {
         model: this.parameters.model,
         stream: true
       })
+
+      const callFunctionsPromises: Promise<[AliceDirective[], Promise<void>]>[] = []
       
       const jsonParser = new JSONParser()
-      jsonParser.onValue = (((value) => {
-        console.info(value)
+      jsonParser.onValue = ((async (value) => {
+        if (value.stack.length == 2 && value.stack[0]?.key === undefined && 
+          value.stack[1]?.key === 'function_calls' && typeof value.key === 'number') {
+            this.logger.info(`Found function call: ${JSON.stringify(value.value)}`)
+          callFunctionsPromises.push(this.callFunctions(context, functions, [parseFunctionCall(value.value)]))
+        }
       }))
 
       for await (const chunk of response) {
@@ -188,7 +248,13 @@ export class Processor {
         }
         responseContent += part
         jsonParser.write(part)
-        this.logger.info(`Received streaming answer from LLM: '${responseContent}'`)
+      }
+
+      const result = await Promise.all(callFunctionsPromises)
+
+      for (const part of result) {
+        directives.push(...part[0])
+        part[1].catch(error => this.logger.error(`Failed to call functions: ${error}`))
       }
 
       this.logger.info(`Received answer from LLM: '${responseContent}'`)
@@ -200,15 +266,20 @@ export class Processor {
     })
     await this.parameters.sessionStorage.save(sessionId, previousMessages)
 
-    const structuredResponse = this.parameters.responseParser.parse(responseContent)
+    const structuredResponse = parseLLMResponse(JSON.parse(responseContent))
     if (!structuredResponse.requireMoreInput && structuredResponse.canCache && isNewRequest) {
       this.cache.set(text, responseContent)
       this.logger.info(`Saved answer to cache: '${text}' -> ${responseContent}`)
     }
-    const [directives, functionPromises] =
-            await this.callFunctions(context, functions, structuredResponse.functionCalls)
 
-    functionPromises.catch(error => this.logger.error(`Failed to call functions: ${error}`))
+    if (!doFunctionCallsOnline) {
+      const [newDirectives, functionPromises] =
+              await this.callFunctions(context, functions, structuredResponse.functionCalls)
+
+      functionPromises.catch(error => this.logger.error(`Failed to call functions: ${error}`))
+
+      directives.push(...newDirectives)
+    }
 
     return {
       directives,

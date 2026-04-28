@@ -38,9 +38,6 @@ importers:
       openai:
         specifier: ^5.9.0
         version: 5.23.2(zod@3.25.67)
-      schema-stream:
-        specifier: ^3.2.2
-        version: 3.2.2(zod@3.25.67)
       tslog:
         specifier: ^4.9.3
         version: 4.10.2
@@ -1590,9 +1587,6 @@ packages:
     resolution: {integrity: sha512-mAZTtNCeetKMH+pSjrb76NAM8V9a05I9aBZOHztWy/UqcJdQYNsf59vrRKWnojAT9Y+GbIvoTBC++CPHqpDBhQ==}
     engines: {node: '>=0.6'}
 
-  ramda@0.29.1:
-    resolution: {integrity: sha512-OfxIeWzd4xdUNxlWhgFazxsA/nl3mS4/jGZI5n00uWOoSSFRhC1b6gl6xvmzUamgmqELraWp0J/qqVlXYPDPyA==}
-
   range-parser@1.2.1:
     resolution: {integrity: sha512-Hrgsx+orqoygnmhFbKaHE6c296J+HTAQXoxEF6gNupROmmGJRoyzfG3ccAveqCBrwr/2yxQ5BVd/GTl5agOwSg==}
     engines: {node: '>= 0.6'}
@@ -1654,11 +1648,6 @@ packages:
 
   safer-buffer@2.1.2:
     resolution: {integrity: sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==}
-
-  schema-stream@3.2.2:
-    resolution: {integrity: sha512-7hwI/4lbo8sOs7sRbKW9Bh+5qPHOj12tVpskHq1tYakVlWEpdLgeEKXXgzGLaAP1Bw+DcoB4DmdA7/nSxGI5OA==}
-    peerDependencies:
-      zod: ^3.23.3
 
   semver@6.3.1:
     resolution: {integrity: sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA==}
@@ -3619,8 +3608,6 @@ snapshots:
     dependencies:
       side-channel: 1.1.0
 
-  ramda@0.29.1: {}
-
   range-parser@1.2.1: {}
 
   raw-body@3.0.2:
@@ -3703,11 +3690,6 @@ snapshots:
       is-regex: 1.2.1
 
   safer-buffer@2.1.2: {}
-
-  schema-stream@3.2.2(zod@3.25.67):
-    dependencies:
-      ramda: 0.29.1
-      zod: 3.25.67
 
   semver@6.3.1: {}
 

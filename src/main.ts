@@ -10,7 +10,6 @@ import { createAliceDirectiveFunctionServer } from './llm/function/alice-directi
 import { RemoteFunctionServer } from './llm/function/remote'
 import { FunctionServer } from './llm/function/types'
 import { HandlebarsPromptGenerator } from './llm/prompt-generator/handlebars'
-import { JSONFormatResponseParser } from './llm/response-parser/json-format'
 import { RemoteStateServer } from './llm/state/remote'
 import { SystemStateServer } from './llm/state/system'
 import { StateServer } from './llm/state/types'
@@ -79,15 +78,12 @@ const promptGenerator = new HandlebarsPromptGenerator(
 
 const sessionStorage = new InMemorySessionStorage<ChatCompletionMessageParam[]>()
 
-const responseParser = new JSONFormatResponseParser()
-
 const processor = new Processor({
   cacheSize: CACHE_SIZE,
   functionServers,
   model: OPENAI_MODEL,
   openAI,
   promptGenerator,
-  responseParser,
   sessionStorage,
   stateServers
 })
