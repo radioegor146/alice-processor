@@ -181,6 +181,12 @@ export class Processor {
         }
       })
 
+      const t = schemaStream['handleToken']
+      schemaStream['handleToken'] = (d: any) => {
+        console.info(t)
+        t.call(schemaStream, d)
+      }
+
       const stream = schemaStream.parse()
 
       const reader = response.toReadableStream().pipeThrough(new OpenAITransformStream()).pipeThrough(stream).getReader()
