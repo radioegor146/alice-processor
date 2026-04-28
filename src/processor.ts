@@ -183,7 +183,7 @@ export class Processor {
 
       const t = schemaStream['handleToken']
       schemaStream['handleToken'] = (d: any) => {
-        console.info(t)
+        console.info(d)
         t.call(schemaStream, d)
       }
 
