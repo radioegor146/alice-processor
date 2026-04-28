@@ -90,6 +90,7 @@ class OpenAITransformStream extends TransformStream {
   constructor() {
     super({
       transform(chunk, controller) {
+        console.info(chunk)
         const part = chunk.choices[0]?.delta?.content
         if (!part) {
           controller.terminate()
