@@ -189,7 +189,7 @@ export class Processor {
         if (done) {
           break;
         }
-        console.info(value)
+        console.info(Buffer.from(value).toString('utf8'))
       }
 
       // for await (const result of response) {
