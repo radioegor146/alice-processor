@@ -272,6 +272,7 @@ export class Processor {
 
       for await (const chunk of response) {
         const part = chunk.choices[0]?.delta?.content
+        logger.info(part)
         if (!part) {
           continue
         }
