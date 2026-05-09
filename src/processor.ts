@@ -273,12 +273,11 @@ export class Processor {
 
       for await (const chunk of response) {
         const part = chunk.choices[0]?.delta?.content
-        logger.info(part)
         if (!part) {
           continue
         }
         responseContent += part
-        // jsonParser.write(part)
+        jsonParser.write(part)
       }
 
       const result = await Promise.all(callFunctionsPromises)
