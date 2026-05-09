@@ -126,15 +126,10 @@ const webSocketMessageType = z.union([
 ])
 
 export class Processor {
-  private readonly cache: LRUCache<string, string>
   private readonly lockedSessions: Set<string> = new Set()
   private readonly logger = getLogger<Processor>()
 
-  constructor (private readonly parameters: ProcessorParameters) {
-    this.cache = new LRUCache({
-      max: parameters.cacheSize
-    })
-  }
+  constructor (private readonly parameters: ProcessorParameters) {}
 
   openSession (webSocket: WebSocket): void {
     let sessionId: null | string = null
@@ -197,11 +192,10 @@ export class Processor {
   }
 
   async process (request: ProcessorRequest): Promise<ProcessorResult> {
-    const isNewRequest = !request.sessionId
-
     const text = request.text.trim()
     const sessionId = request.sessionId ?? randomUUID()
     const previousMessages = await this.parameters.sessionStorage.load(sessionId) ?? []
+    const isNewRequest = previousMessages.length === 0
 
     const context: SessionContext = {
       id: sessionId,
