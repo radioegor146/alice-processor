@@ -155,7 +155,7 @@ export class Processor {
       switch (decodedData.type) {
         case 'prepare': {
           this.logger.info('WebSocket prepare')
-          sessionId = decodedData.data.sessionId ?? null
+          sessionId = decodedData.data.sessionId ?? randomUUID()
           if (sessionId) {
             this.lockedSessions.add(sessionId)
           }
