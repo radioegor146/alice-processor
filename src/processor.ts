@@ -195,7 +195,7 @@ export class Processor {
               }))
               this.logger.info('WebSocket close')
               webSocket.close()
-            })
+            }, 10_000)
           })
           break
         }
