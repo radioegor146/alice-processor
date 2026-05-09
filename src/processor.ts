@@ -165,6 +165,7 @@ export class Processor {
           this.logger.info('WebSocket process')
           const response = await this.process({
             ...decodedData.data,
+            metadata: {},
             sessionId: sessionId ?? undefined
           })
           sessionId = response.sessionId ?? null
