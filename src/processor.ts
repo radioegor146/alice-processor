@@ -278,7 +278,7 @@ export class Processor {
           continue
         }
         responseContent += part
-        jsonParser.write(part)
+        // jsonParser.write(part)
       }
 
       const result = await Promise.all(callFunctionsPromises)
