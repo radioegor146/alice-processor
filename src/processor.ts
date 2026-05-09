@@ -126,10 +126,15 @@ const webSocketMessageType = z.union([
 ])
 
 export class Processor {
+  private readonly cache: LRUCache<string, string>
   private readonly lockedSessions: Set<string> = new Set()
   private readonly logger = getLogger<Processor>()
 
-  constructor (private readonly parameters: ProcessorParameters) {}
+  constructor (private readonly parameters: ProcessorParameters) {
+    this.cache = new LRUCache({
+      max: parameters.cacheSize
+    })
+  }
 
   openSession (webSocket: WebSocket): void {
     let sessionId: null | string = null
