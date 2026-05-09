@@ -110,9 +110,7 @@ const scheduleTimeRegexes: { coefficient: number; regex: RegExp, }[] = [
 
 const webSocketMessageType = z.union([
   z.object({
-    data: z.object({
-      sessionId: z.string().optional()
-    }),
+    data: z.object({}),
     type: z.literal('prepare')
   }),
   z.object({
@@ -127,7 +125,6 @@ const webSocketMessageType = z.union([
 
 export class Processor {
   private readonly cache: LRUCache<string, string>
-  private readonly lockedSessions: Set<string> = new Set()
   private readonly logger = getLogger<Processor>()
 
   constructor (private readonly parameters: ProcessorParameters) {
@@ -139,15 +136,9 @@ export class Processor {
   openSession (webSocket: WebSocket): void {
     let sessionId: null | string = null
     webSocket.addEventListener('error', error => {
-      if (sessionId) {
-        this.lockedSessions.delete(sessionId)
-      }
       this.logger.info(`WebSocket session error: ${error.error}`)
     })
     webSocket.addEventListener('close', error => {
-      if (sessionId) {
-        this.lockedSessions.delete(sessionId)
-      }
       this.logger.info(`WebSocket session error: ${error.code}`)
     })
     webSocket.addEventListener('message', async message => {
@@ -155,10 +146,7 @@ export class Processor {
       switch (decodedData.type) {
         case 'prepare': {
           this.logger.info('WebSocket prepare')
-          sessionId = decodedData.data.sessionId ?? randomUUID()
-          if (sessionId) {
-            this.lockedSessions.add(sessionId)
-          }
+          sessionId = randomUUID()
           break
         }
         case 'process': {
@@ -169,9 +157,6 @@ export class Processor {
             sessionId: sessionId ?? undefined
           })
           sessionId = response.sessionId ?? null
-          if (sessionId) {
-            this.lockedSessions.add(sessionId)
-          }
           webSocket.send(JSON.stringify({
             data: {
               directives: response.directives,
@@ -181,20 +166,7 @@ export class Processor {
             },
             type: 'partialResponse'
           }), () => {
-            this.logger.info('deferring for test')
-            setTimeout(() => {
-              this.logger.info('sent deferred')
-              webSocket.send(JSON.stringify({
-                data: {
-                  directives: [],
-                  finished: true,
-                  requireMoreInput: response.requireMoreInput,
-                  sessionId: response.sessionId,
-                  text: 'жопа'
-                },
-                type: 'partialResponse'
-              }))
-            }, 10_000)
+            this.logger.info('sent request')
           })
           break
         }
