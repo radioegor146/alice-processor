@@ -181,21 +181,8 @@ export class Processor {
             },
             type: 'partialResponse'
           }), () => {
-            this.logger.info('deferring for test')
-            setTimeout(() => {
-              webSocket.send(JSON.stringify({
-                data: {
-                  directives: [],
-                  finished: true,
-                  requireMoreInput: response.requireMoreInput,
-                  sessionId: response.sessionId,
-                  text: 'жопа'
-                },
-                type: 'partialResponse'
-              }))
-              this.logger.info('WebSocket close')
-              webSocket.close()
-            }, 10_000)
+            this.logger.info('WebSocket close')
+            webSocket.close()
           })
           break
         }
