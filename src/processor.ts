@@ -174,15 +174,28 @@ export class Processor {
           webSocket.send(JSON.stringify({
             data: {
               directives: response.directives,
-              finished: true,
-              requireMoreInput: response.requireMoreInput,
+              finished: false,
               sessionId: response.sessionId,
               text: response.text
             },
             type: 'partialResponse'
           }), () => {
-            this.logger.info('WebSocket close')
-            webSocket.close()
+            setTimeout(() => {
+              logger.info('Sending next in 10s')
+              webSocket.send(JSON.stringify({
+                data: {
+                  directives: [],
+                  finished: true,
+                  requireMoreInput: response.requireMoreInput,
+                  sessionId: response.sessionId,
+                  text: 'жопа'
+                },
+                type: 'partialResponse'
+              }), () => {
+                this.logger.info('WebSocket close')
+                webSocket.close()
+              })
+            }, 10_000)
           })
           break
         }
