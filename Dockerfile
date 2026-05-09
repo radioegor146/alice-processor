@@ -1,6 +1,7 @@
-FROM node:24
-COPY package.json package.json
-COPY pnpm-lock.yaml pnpm-lock.yaml
-RUN corepack enable && pnpm install
+FROM node:25
+ENV NODE_ENV=production
+RUN ["npm", "-g", "i", "pnpm@10.23.0"]
+COPY ./package.json ./pnpm-lock.yaml ./pnpm-workspace.yaml ./
+RUN ["pnpm", "install", "--frozen-lockfile"]
 COPY . .
 CMD ["pnpm", "start"]
