@@ -1,7 +1,10 @@
+import { JSONParser } from '@streamparser/json'
 import { LRUCache } from 'lru-cache'
 import { randomUUID } from 'node:crypto'
 import { OpenAI } from 'openai'
 import { ChatCompletionMessageParam } from 'openai/src/resources/chat/completions/completions'
+import { WebSocket } from 'ws'
+import z from 'zod'
 
 import { AliceDirectiveFunctionServer } from './llm/function/alice-directive'
 import { FunctionServer } from './llm/function/types'
@@ -18,8 +21,6 @@ import {
 } from './llm/types'
 import { getLogger } from './logger'
 import { SessionStorage } from './session-storage/types'
-import z from "zod"
-import { JSONParser } from '@streamparser/json'
 
 const logger = getLogger()
 
@@ -77,10 +78,10 @@ interface ProcessorParameters {
 }
 
 const functionCallType = z.object({
-    args: z.record(z.union([z.number(), z.string()])),
-    name: z.string(),
-    schedule: z.string().optional()
-  })
+  args: z.record(z.union([z.number(), z.string()])),
+  name: z.string(),
+  schedule: z.string().optional()
+})
 
 const llmResponseType = z.object({
   can_cache: z.boolean().optional(),
@@ -107,56 +108,85 @@ const scheduleTimeRegexes: { coefficient: number; regex: RegExp, }[] = [
   },
 ]
 
-function parseSchedule (schedule: string): number {
-  const parts = schedule.split(' ').filter(Boolean)
-  let result = 0
-  for (const part of parts) {
-    let matched = false
-    for (const { coefficient, regex } of scheduleTimeRegexes) {
-      const match = part.match(regex)
-      if (!match) {
-        continue
-      }
-      matched = true
-      result += coefficient * Number.parseFloat(match.groups?.value ?? '0')
-    }
-    if (!matched) {
-      logger.warn(`Failed to parse 'schedule' part from LLM: '${part}'`)
-    }
-  }
-  return result
-}
-
-function parseFunctionCall(rawCall: unknown): FunctionCall {
-  const call = functionCallType.parse(rawCall)
-  return {
-    name: call.name,
-    parameters: call.args,
-    ...(call.schedule
-      ? {
-          schedule: parseSchedule(call.schedule)
-        }
-      : {})
-  }
-}
-
-function parseLLMResponse(rawResponse: unknown): StructuredResponse {
-  const response = llmResponseType.parse(rawResponse)
-  return {
-    canCache: response.can_cache ?? false,
-    functionCalls: response.function_calls?.map(call => parseFunctionCall(call)) ?? [],
-    requireMoreInput: response.continue_dialog ?? false,
-    text: response.text ?? ""
-  }
-}
+const webSocketMessageType = z.union([
+  z.object({
+    data: z.object({
+      sessionId: z.string().optional()
+    }),
+    type: z.literal('prepare')
+  }),
+  z.object({
+    data: z.object({
+      isExternalEvent: z.boolean().optional(),
+      metadata: z.record(z.string(), z.any()),
+      text: z.string()
+    }),
+    type: z.literal('process')
+  })
+])
 
 export class Processor {
   private readonly cache: LRUCache<string, string>
+  private readonly lockedSessions: Set<string> = new Set()
   private readonly logger = getLogger<Processor>()
 
   constructor (private readonly parameters: ProcessorParameters) {
     this.cache = new LRUCache({
       max: parameters.cacheSize
+    })
+  }
+
+  openSession (webSocket: WebSocket): void {
+    let sessionId: null | string = null
+    webSocket.addEventListener('error', error => {
+      if (sessionId) {
+        this.lockedSessions.delete(sessionId)
+      }
+      this.logger.info(`WebSocket session error: ${error.error}`)
+    })
+    webSocket.addEventListener('close', error => {
+      if (sessionId) {
+        this.lockedSessions.delete(sessionId)
+      }
+      this.logger.info(`WebSocket session error: ${error.code}`)
+    })
+    webSocket.addEventListener('message', async message => {
+      const decodedData = webSocketMessageType.parse(JSON.parse(message.data.toString()))
+      switch (decodedData.type) {
+        case 'prepare': {
+          this.logger.info('WebSocket prepare')
+          sessionId = decodedData.data.sessionId ?? null
+          if (sessionId) {
+            this.lockedSessions.add(sessionId)
+          }
+          break
+        }
+        case 'process': {
+          this.logger.info('WebSocket process')
+          const response = await this.process({
+            ...decodedData.data,
+            sessionId: sessionId ?? undefined
+          })
+          sessionId = response.sessionId ?? null
+          if (sessionId) {
+            this.lockedSessions.add(sessionId)
+          }
+          webSocket.send(JSON.stringify({
+            data: {
+              directives: response.directives,
+              finished: true,
+              requireMoreInput: response.requireMoreInput,
+              sessionId: response.sessionId,
+              text: response.text
+            },
+            type: 'partialResponse'
+          }), () => {
+            this.logger.info('WebSocket close')
+            webSocket.close()
+          })
+          break
+        }
+      }
     })
   }
 
@@ -191,7 +221,7 @@ export class Processor {
     previousMessages.push({
       content: this.parameters.promptGenerator.generateState(state),
       role: 'system'
-    }) 
+    })
 
     if (request.isExternalEvent) {
       previousMessages.push({
@@ -207,7 +237,7 @@ export class Processor {
 
     this.logger.info(`Received request: ${JSON.stringify(request, undefined, 4)}`)
 
-    let responseContent: string = ""
+    let responseContent: string = ''
 
     const cachedResponse = this.cache.get(text)
 
@@ -231,15 +261,15 @@ export class Processor {
       })
 
       const callFunctionsPromises: Promise<[AliceDirective[], Promise<void>]>[] = []
-      
+
       const jsonParser = new JSONParser()
-      jsonParser.onValue = ((async (value) => {
-        if (value.stack.length == 2 && value.stack[0]?.key === undefined && 
+      jsonParser.onValue = async (value) => {
+        if (value.stack.length === 2 && value.stack[0]?.key === undefined &&
           value.stack[1]?.key === 'function_calls' && typeof value.key === 'number') {
-            this.logger.info(`Found function call: ${JSON.stringify(value.value)}`)
+          this.logger.info(`Found function call: ${JSON.stringify(value.value)}`)
           callFunctionsPromises.push(this.callFunctions(context, functions, [parseFunctionCall(value.value)]))
         }
-      }))
+      }
 
       for await (const chunk of response) {
         const part = chunk.choices[0]?.delta?.content
@@ -491,4 +521,47 @@ function compareStrings (a: string, b: string): number {
     return 1
   }
   return 0
+}
+
+function parseFunctionCall (rawCall: unknown): FunctionCall {
+  const call = functionCallType.parse(rawCall)
+  return {
+    name: call.name,
+    parameters: call.args,
+    ...(call.schedule
+      ? {
+          schedule: parseSchedule(call.schedule)
+        }
+      : {})
+  }
+}
+
+function parseLLMResponse (rawResponse: unknown): StructuredResponse {
+  const response = llmResponseType.parse(rawResponse)
+  return {
+    canCache: response.can_cache ?? false,
+    functionCalls: response.function_calls?.map(call => parseFunctionCall(call)) ?? [],
+    requireMoreInput: response.continue_dialog ?? false,
+    text: response.text ?? ''
+  }
+}
+
+function parseSchedule (schedule: string): number {
+  const parts = schedule.split(' ').filter(Boolean)
+  let result = 0
+  for (const part of parts) {
+    let matched = false
+    for (const { coefficient, regex } of scheduleTimeRegexes) {
+      const match = part.match(regex)
+      if (!match) {
+        continue
+      }
+      matched = true
+      result += coefficient * Number.parseFloat(match.groups?.value ?? '0')
+    }
+    if (!matched) {
+      logger.warn(`Failed to parse 'schedule' part from LLM: '${part}'`)
+    }
+  }
+  return result
 }

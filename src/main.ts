@@ -4,6 +4,7 @@ import express from 'express'
 import fs from 'node:fs'
 import { OpenAI } from 'openai'
 import { ChatCompletionMessageParam } from 'openai/src/resources/chat/completions/completions'
+import { Server as WSServer } from 'ws'
 import z from 'zod'
 
 import { createAliceDirectiveFunctionServer } from './llm/function/alice-directive'
@@ -89,6 +90,7 @@ const processor = new Processor({
 })
 
 app.use(express.json())
+
 app.post('/process', (request, response) => {
   try {
     processor.process(requestType.parse(request.body))
@@ -138,10 +140,26 @@ app.patch('/process', (request, response) => {
   }
 })
 
-app.listen(PORT, error => {
+const server = app.listen(PORT, error => {
   if (error) {
     logger.fatal(`Failed to start on :${PORT}: ${error}`)
     return
   }
   logger.info(`Started on :${PORT}`)
+})
+
+const wsServer = new WSServer({ noServer: true })
+
+server.on('upgrade', (request, socket, head) => {
+  if (request.url === '/process') {
+    wsServer.handleUpgrade(request, socket, head, client => {
+      wsServer.emit('connection', client, request)
+    })
+  }
+})
+
+wsServer.on('connection', (websocket, request) => {
+  logger.debug('Got WebSocket connection')
+
+  processor.openSession(websocket)
 })
