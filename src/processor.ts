@@ -174,7 +174,7 @@ export class Processor {
           webSocket.send(JSON.stringify({
             data: {
               directives: response.directives,
-              finished: false,
+              finished: true,
               sessionId: response.sessionId,
               text: response.text
             },
