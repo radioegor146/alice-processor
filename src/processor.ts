@@ -183,6 +183,7 @@ export class Processor {
           }), () => {
             this.logger.info('deferring for test')
             setTimeout(() => {
+              this.logger.info('sent deferred')
               webSocket.send(JSON.stringify({
                 data: {
                   directives: [],
@@ -193,8 +194,6 @@ export class Processor {
                 },
                 type: 'partialResponse'
               }))
-              this.logger.info('WebSocket close')
-              webSocket.close()
             }, 10_000)
           })
           break
