@@ -236,14 +236,6 @@ export class Processor {
     } else {
       doFunctionCallsOnline = true
       this.logger.info('Querying LLM')
-      const response = await this.parameters.openAI.chat.completions.create({
-        messages: [
-          ...previousMessages
-        ],
-        model: this.parameters.model,
-        stream: true
-      })
-
       const callFunctionsPromises: Promise<[AliceDirective[], Promise<void>]>[] = []
 
       const jsonParser = new JSONParser()
@@ -255,7 +247,22 @@ export class Processor {
         }
       }
 
+      let firstWasPrint = false
+
+      const beforeTime = new Date()
+      const response = await this.parameters.openAI.chat.completions.create({
+        messages: [
+          ...previousMessages
+        ],
+        model: this.parameters.model,
+        stream: true
+      })
+
       for await (const chunk of response) {
+        if (!firstWasPrint) {
+          logger.info(`TTFT: ${Date.now() - beforeTime.getTime()}ms`)
+          firstWasPrint = true
+        }
         const part = chunk.choices[0]?.delta?.content
         if (!part) {
           continue
@@ -263,6 +270,7 @@ export class Processor {
         responseContent += part
         jsonParser.write(part)
       }
+      logger.info(`Full query time: ${Date.now() - beforeTime.getTime()}ms`)
 
       const result = await Promise.all(callFunctionsPromises)
 
