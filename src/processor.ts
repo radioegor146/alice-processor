@@ -1,4 +1,5 @@
 import { JSONParser } from '@streamparser/json'
+import { Sema } from 'async-sema'
 import { LRUCache } from 'lru-cache'
 import { randomUUID } from 'node:crypto'
 import { OpenAI } from 'openai'
@@ -134,6 +135,7 @@ export class Processor {
   }
 
   async openSession (webSocket: WebSocket): Promise<Promise<void>> {
+    const lock = new Sema(1)
     const messages: ChatCompletionMessageParam[] = []
     const sessionId = randomUUID()
     let isFirstRequest = true
@@ -146,6 +148,7 @@ export class Processor {
       this.logger.info(`WebSocket session error: ${error.code}`)
     })
     webSocket.addEventListener('message', async message => {
+      await lock.acquire()
       try {
         const decodedData = webSocketMessageType.parse(JSON.parse(message.data.toString()))
 
@@ -292,7 +295,11 @@ export class Processor {
             break
           }
         }
-      } catch {}
+      } catch (error) {
+        logger.error('Failed on WebSocket message handling: ', error)
+      } finally {
+        lock.release()
+      }
     })
   }
 
