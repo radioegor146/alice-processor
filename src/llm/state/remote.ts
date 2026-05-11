@@ -14,7 +14,7 @@ export class RemoteStateServer implements StateServer {
       headers: {
         'content-type': 'application/json'
       },
-      method: 'POST'
+      method: 'PUT'
     })
     return stateType.parse(await response.json())
   }
