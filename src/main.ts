@@ -5,7 +5,6 @@ import fs from 'node:fs'
 import { OpenAI } from 'openai'
 import { ChatCompletionMessageParam } from 'openai/src/resources/chat/completions/completions'
 import { Server as WSServer } from 'ws'
-import z from 'zod'
 
 import { createAliceDirectiveFunctionServer } from './llm/function/alice-directive'
 import { RemoteFunctionServer } from './llm/function/remote'
@@ -41,17 +40,6 @@ const CACHE_SIZE = Number.parseInt(process.env.CACHE_SIZE || '1000')
 const app = express()
 
 app.use(cors())
-
-const requestType = z.object({
-  isExternalEvent: z.boolean().optional(),
-  metadata: z.record(z.any()),
-  sessionId: z.string().uuid().optional(),
-  text: z.string(),
-})
-
-const prepareRequestType = z.object({
-  sessionId: z.string().uuid().optional()
-})
 
 const openAI = new OpenAI({
   apiKey: OPENAI_API_KEY,
@@ -91,55 +79,6 @@ const processor = new Processor({
 
 app.use(express.json())
 
-app.post('/process', (request, response) => {
-  try {
-    processor.process(requestType.parse(request.body))
-      .then(result => {
-        response.status(200).json({
-          success: true,
-          ...result
-        })
-      })
-      .catch(error => {
-        logger.error(`Processor error: ${error}`)
-        response.status(500).json({
-          error: error.toString(),
-          success: false
-        })
-      })
-  } catch (error) {
-    logger.error(`Processor error: ${error}`)
-    response.status(500).json({
-      error: String(error),
-      success: false
-    })
-  }
-})
-app.patch('/process', (request, response) => {
-  try {
-    processor.prepare(prepareRequestType.parse(request.body))
-      .then(result => {
-        response.status(200).json({
-          success: true,
-          ...result
-        })
-      })
-      .catch(error => {
-        logger.error(`Processor error: ${error}`)
-        response.status(500).json({
-          error: error.toString(),
-          success: false
-        })
-      })
-  } catch (error) {
-    logger.error(`Processor error: ${error}`)
-    response.status(500).json({
-      error: String(error),
-      success: false
-    })
-  }
-})
-
 const server = app.listen(PORT, error => {
   if (error) {
     logger.fatal(`Failed to start on :${PORT}: ${error}`)
@@ -158,7 +97,7 @@ server.on('upgrade', (request, socket, head) => {
   }
 })
 
-wsServer.on('connection', (websocket, request) => {
+wsServer.on('connection', (websocket, _) => {
   logger.debug('Got WebSocket connection')
 
   processor.openSession(websocket)

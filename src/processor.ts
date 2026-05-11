@@ -15,7 +15,7 @@ import {
   FunctionCall,
   FunctionCallArguments,
   FunctionInfo,
-  Functions, SessionContext,
+  Functions,
   State,
   StructuredResponse
 } from './llm/types'
@@ -133,8 +133,12 @@ export class Processor {
     })
   }
 
-  openSession (webSocket: WebSocket): void {
-    let sessionId: null | string = null
+  async openSession (webSocket: WebSocket): Promise<Promise<void>> {
+    const messages: ChatCompletionMessageParam[] = []
+    const sessionId = randomUUID()
+    let isFirstRequest = true
+    let functions: ExtendedFunctions
+
     webSocket.addEventListener('error', error => {
       this.logger.info(`WebSocket session error: ${error.error}`)
     })
@@ -142,176 +146,157 @@ export class Processor {
       this.logger.info(`WebSocket session error: ${error.code}`)
     })
     webSocket.addEventListener('message', async message => {
-      const decodedData = webSocketMessageType.parse(JSON.parse(message.data.toString()))
-      switch (decodedData.type) {
-        case 'prepare': {
-          this.logger.info('WebSocket prepare')
-          sessionId = randomUUID()
-          break
+      try {
+        const decodedData = webSocketMessageType.parse(JSON.parse(message.data.toString()))
+
+        switch (decodedData.type) {
+          case 'prepare': {
+            this.logger.info(`Session ${sessionId} prepare`)
+
+            functions = await this.getFunctions()
+            messages.push({
+              content: this.parameters.promptGenerator.generate(functions),
+              role: 'system'
+            })
+
+            const state = await this.getIndependentState(sessionId)
+            messages.push({
+              content: this.parameters.promptGenerator.generateState(state),
+              role: 'system'
+            })
+            break
+          }
+          case 'process': {
+            const request = decodedData.data
+
+            this.logger.info(`Session ${sessionId} process: ${JSON.stringify(request)}`)
+            this.logger.info(`Received request: ${JSON.stringify(request, undefined, 4)}`)
+
+            const state = await this.getState(sessionId, decodedData.data.metadata)
+            messages.push({
+              content: this.parameters.promptGenerator.generateState(state),
+              role: 'system'
+            })
+
+            const text = request.text.trim()
+
+            if (request.isExternalEvent) {
+              messages.push({
+                content: `External event happened: '${text}'`,
+                role: 'system'
+              })
+            } else {
+              messages.push({
+                content: text,
+                role: 'user'
+              })
+            }
+
+            let responseContent: string = ''
+
+            const cachedResponse = this.cache.get(text)
+
+            let doFunctionCallsOnline = false
+
+            const directives: AliceDirective[] = []
+
+            if (isFirstRequest && cachedResponse) {
+              doFunctionCallsOnline = false
+              responseContent = cachedResponse
+              this.logger.info(`Received answer from cache: ${responseContent}`)
+            } else {
+              doFunctionCallsOnline = true
+              this.logger.info('Querying LLM')
+              const callFunctionsPromises: Promise<[AliceDirective[], Promise<void>]>[] = []
+
+              const jsonParser = new JSONParser()
+              jsonParser.onValue = async (value) => {
+                if (value.stack.length === 2 && value.stack[0]?.key === undefined &&
+                    value.stack[1]?.key === 'function_calls' && typeof value.key === 'number') {
+                  this.logger.info(`Found function call: ${JSON.stringify(value.value)}`)
+                  callFunctionsPromises.push(this.callFunctions(sessionId, request.metadata,
+                    functions, [parseFunctionCall(value.value)]))
+                }
+              }
+
+              let firstWasPrint = false
+
+              const beforeTime = new Date()
+              const response = await this.parameters.openAI.chat.completions.create({
+                messages,
+                model: this.parameters.model,
+                stream: true
+              })
+
+              for await (const chunk of response) {
+                if (!firstWasPrint) {
+                  logger.info(`TTFT: ${Date.now() - beforeTime.getTime()}ms`)
+                  firstWasPrint = true
+                }
+                const part = chunk.choices[0]?.delta?.content
+                if (!part) {
+                  continue
+                }
+                responseContent += part
+                jsonParser.write(part)
+              }
+              logger.info(`Full query time: ${Date.now() - beforeTime.getTime()}ms`)
+
+              const result = await Promise.all(callFunctionsPromises)
+
+              for (const part of result) {
+                directives.push(...part[0])
+                part[1].catch(error => this.logger.error(`Failed to call functions: ${error}`))
+              }
+
+              this.logger.info(`Received answer from LLM: '${responseContent}'`)
+            }
+
+            messages.push({
+              content: responseContent,
+              role: 'assistant'
+            })
+
+            const structuredResponse = parseLLMResponse(JSON.parse(responseContent))
+            if (!structuredResponse.requireMoreInput && structuredResponse.canCache && isFirstRequest) {
+              this.cache.set(text, responseContent)
+              this.logger.info(`Saved answer to cache: '${text}' -> ${responseContent}`)
+            }
+
+            isFirstRequest = false
+
+            if (!doFunctionCallsOnline) {
+              const [newDirectives, functionPromises] =
+              await this.callFunctions(sessionId, request.metadata, functions, structuredResponse.functionCalls)
+
+              functionPromises.catch(error => this.logger.error(`Failed to call functions: ${error}`))
+
+              directives.push(...newDirectives)
+            }
+
+            await new Promise<void>((resolve, reject) => webSocket.send(JSON.stringify({
+              data: {
+                directives,
+                finished: true,
+                requireMoreInput: structuredResponse.requireMoreInput,
+                text: structuredResponse.text
+              },
+              type: 'partialResponse'
+            }), (error) => {
+              if (error) {
+                reject(error)
+              } else {
+                resolve()
+              }
+            }))
+            break
+          }
         }
-        case 'process': {
-          this.logger.info('WebSocket process')
-          const response = await this.process({
-            ...decodedData.data,
-            metadata: {},
-            sessionId: sessionId ?? undefined
-          })
-          sessionId = response.sessionId ?? null
-          webSocket.send(JSON.stringify({
-            data: {
-              directives: response.directives,
-              finished: true,
-              requireMoreInput: response.requireMoreInput,
-              sessionId: response.sessionId,
-              text: response.text
-            },
-            type: 'partialResponse'
-          }), () => {
-            this.logger.info('sent request')
-          })
-          break
-        }
-      }
+      } catch {}
     })
   }
 
-  async prepare (request: ProcessorPrepareRequest): Promise<ProcessorPrepareResponse> {
-    return {
-      sessionId: request.sessionId
-    }
-  }
-
-  async process (request: ProcessorRequest): Promise<ProcessorResult> {
-    const text = request.text.trim()
-    const sessionId = request.sessionId ?? randomUUID()
-    const previousMessages = await this.parameters.sessionStorage.load(sessionId) ?? []
-    const isNewRequest = previousMessages.length === 0
-
-    const context: SessionContext = {
-      id: sessionId,
-      metadata: request.metadata
-    }
-
-    const functions = await this.getFunctions(context)
-
-    if (isNewRequest) {
-      previousMessages.push({
-        content: this.parameters.promptGenerator.generate(functions),
-        role: 'system'
-      })
-    }
-
-    const state = await this.getState(context)
-    previousMessages.push({
-      content: this.parameters.promptGenerator.generateState(state),
-      role: 'system'
-    })
-
-    if (request.isExternalEvent) {
-      previousMessages.push({
-        content: `External event happened: '${text}'`,
-        role: 'system'
-      })
-    } else {
-      previousMessages.push({
-        content: text,
-        role: 'user'
-      })
-    }
-
-    this.logger.info(`Received request: ${JSON.stringify(request, undefined, 4)}`)
-
-    let responseContent: string = ''
-
-    const cachedResponse = this.cache.get(text)
-
-    let doFunctionCallsOnline = false
-
-    const directives: AliceDirective[] = []
-
-    if (isNewRequest && cachedResponse) {
-      doFunctionCallsOnline = false
-      responseContent = cachedResponse
-      this.logger.info(`Received answer from cache: ${responseContent}`)
-    } else {
-      doFunctionCallsOnline = true
-      this.logger.info('Querying LLM')
-      const callFunctionsPromises: Promise<[AliceDirective[], Promise<void>]>[] = []
-
-      const jsonParser = new JSONParser()
-      jsonParser.onValue = async (value) => {
-        if (value.stack.length === 2 && value.stack[0]?.key === undefined &&
-          value.stack[1]?.key === 'function_calls' && typeof value.key === 'number') {
-          this.logger.info(`Found function call: ${JSON.stringify(value.value)}`)
-          callFunctionsPromises.push(this.callFunctions(context, functions, [parseFunctionCall(value.value)]))
-        }
-      }
-
-      let firstWasPrint = false
-
-      const beforeTime = new Date()
-      const response = await this.parameters.openAI.chat.completions.create({
-        messages: [
-          ...previousMessages
-        ],
-        model: this.parameters.model,
-        stream: true
-      })
-
-      for await (const chunk of response) {
-        if (!firstWasPrint) {
-          logger.info(`TTFT: ${Date.now() - beforeTime.getTime()}ms`)
-          firstWasPrint = true
-        }
-        const part = chunk.choices[0]?.delta?.content
-        if (!part) {
-          continue
-        }
-        responseContent += part
-        jsonParser.write(part)
-      }
-      logger.info(`Full query time: ${Date.now() - beforeTime.getTime()}ms`)
-
-      const result = await Promise.all(callFunctionsPromises)
-
-      for (const part of result) {
-        directives.push(...part[0])
-        part[1].catch(error => this.logger.error(`Failed to call functions: ${error}`))
-      }
-
-      this.logger.info(`Received answer from LLM: '${responseContent}'`)
-    }
-
-    previousMessages.push({
-      content: responseContent,
-      role: 'assistant'
-    })
-    await this.parameters.sessionStorage.save(sessionId, previousMessages)
-
-    const structuredResponse = parseLLMResponse(JSON.parse(responseContent))
-    if (!structuredResponse.requireMoreInput && structuredResponse.canCache && isNewRequest) {
-      this.cache.set(text, responseContent)
-      this.logger.info(`Saved answer to cache: '${text}' -> ${responseContent}`)
-    }
-
-    if (!doFunctionCallsOnline) {
-      const [newDirectives, functionPromises] =
-              await this.callFunctions(context, functions, structuredResponse.functionCalls)
-
-      functionPromises.catch(error => this.logger.error(`Failed to call functions: ${error}`))
-
-      directives.push(...newDirectives)
-    }
-
-    return {
-      directives,
-      requireMoreInput: structuredResponse.requireMoreInput,
-      sessionId,
-      text: structuredResponse.text
-    }
-  }
-
-  private async callFunctions (context: SessionContext, functions: ExtendedFunctions,
+  private async callFunctions (sessionId: string, metadata: object, functions: ExtendedFunctions,
     functionCalls: FunctionCall[]): Promise<[AliceDirective[], Promise<void>]> {
     const directives: AliceDirective[] = []
 
@@ -328,7 +313,11 @@ export class Processor {
       }
 
       if (function_.server instanceof AliceDirectiveFunctionServer) {
-        directives.push(await function_.server.callDirectiveFunction(context, call.name, call.parameters))
+        const directive = await function_.server.callDirectiveFunction(sessionId, metadata, call.name, call.parameters)
+        if (!directive) {
+          continue
+        }
+        directives.push(directive)
         continue
       }
 
@@ -338,7 +327,7 @@ export class Processor {
             this.logger.info(`Calling ${call.name} with ${JSON.stringify(call.parameters)} after ${call.schedule} milliseconds`)
             await new Promise(resolve => setTimeout(resolve, call.schedule))
           }
-          await function_.server.callFunction(context, call.name, call.parameters)
+          await function_.server.callFunction(sessionId, metadata, call.name, call.parameters)
         } catch (error) {
           this.logger.warn(`Failed to call function '${call.name}' with parameters ${JSON.stringify(call.parameters)}: ${error}`)
         }
@@ -348,12 +337,12 @@ export class Processor {
     return [directives, Promise.all(promises).then(() => {})]
   }
 
-  private async getFunctions (context: SessionContext): Promise<ExtendedFunctions> {
+  private async getFunctions (): Promise<ExtendedFunctions> {
     const promises: Promise<[FunctionServer, Functions, undefined | unknown]>[] = []
     for (const server of this.parameters.functionServers) {
       promises.push((async () => {
         try {
-          const functions = await server.getFunctions(context)
+          const functions = await server.getFunctions()
           return [server, functions, undefined]
         } catch (error) {
           return [server, {}, error]
@@ -381,12 +370,42 @@ export class Processor {
     return resultFunctions
   }
 
-  private async getState (context: SessionContext): Promise<State> {
+  private async getIndependentState (sessionId: string): Promise<State> {
     const promises: Promise<[StateServer, State, undefined | unknown]>[] = []
     for (const server of this.parameters.stateServers) {
       promises.push((async () => {
         try {
-          const state = await server.getState(context)
+          const state = await server.getIndependentState(sessionId)
+          return [server, state, undefined]
+        } catch (error) {
+          return [server, {}, error]
+        }
+      })())
+    }
+    const resultState: State = {}
+    const results = await Promise.all(promises)
+    for (const [server, state, error] of results) {
+      if (error) {
+        this.logger.warn(`State server ${server.getName()} returned error: ${error}`)
+        continue
+      }
+      for (const [key, stateEntry] of Object.entries(state)) {
+        if (resultState[key]) {
+          this.logger.warn(`State server ${server.getName()} returned duplicate state entry '${key}'`)
+          continue
+        }
+        resultState[key] = stateEntry
+      }
+    }
+    return resultState
+  }
+
+  private async getState (sessionId: string, metadata: object): Promise<State> {
+    const promises: Promise<[StateServer, State, undefined | unknown]>[] = []
+    for (const server of this.parameters.stateServers) {
+      promises.push((async () => {
+        try {
+          const state = await server.getState(sessionId, metadata)
           return [server, state, undefined]
         } catch (error) {
           return [server, {}, error]

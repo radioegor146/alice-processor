@@ -1,6 +1,6 @@
 import z from 'zod'
 
-import { SessionContext, State } from '../types'
+import { State } from '../types'
 
 export const stateType = z.record(z.object({
   description: z.string(),
@@ -8,7 +8,9 @@ export const stateType = z.record(z.object({
 }))
 
 export interface StateServer {
+  getIndependentState(sessionId: string): Promise<State>
+
   getName(): string;
 
-  getState(context: SessionContext): Promise<State>;
+  getState(sessionId: string, metadata: object): Promise<State>;
 }

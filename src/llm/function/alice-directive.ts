@@ -1,18 +1,22 @@
 import { AliceDirective } from '../../processor'
-import { FunctionInfo, Functions, SessionContext } from '../types'
+import { FunctionInfo, Functions } from '../types'
 import { FunctionServer } from './types'
 
 export interface AliceDirectiveFunction {
-  implementation: (context: SessionContext, input: Record<string, number | string>) => Promise<AliceDirective>,
+  implementation: (id: string, metadata: object, input: Record<string, number | string>) => Promise<AliceDirective>,
   info: FunctionInfo,
 }
 
 export class AliceDirectiveFunctionServer implements FunctionServer {
   constructor (private readonly directiveFunctions: Record<string, AliceDirectiveFunction>) {}
 
-  callDirectiveFunction (context: SessionContext, functionName: string,
-    parameters: Record<string, number | string>): Promise<AliceDirective> {
-    return this.directiveFunctions[functionName].implementation(context, parameters)
+  async callDirectiveFunction (id: string, metadata: object, functionName: string,
+    parameters: Record<string, number | string>): Promise<AliceDirective | null> {
+    const directiveFunction = this.directiveFunctions[functionName]
+    if (!directiveFunction) {
+      return null
+    }
+    return directiveFunction.implementation(id, metadata, parameters)
   }
 
   callFunction (): Promise<void> {
@@ -45,7 +49,7 @@ AliceDirectiveFunctionServer {
         }
       },
       description: 'sets volume level of Алиса voice assistant, use this method only when user directly asks for your volume'
-    }, async (_, parameters) => ({
+    }, async (_, __, parameters) => ({
       newLevel: parameters['level'] as number,
       type: 'soundSetLevel'
     })),
@@ -65,7 +69,8 @@ AliceDirectiveFunctionServer {
 }
 
 function createDirectiveFunction (info: FunctionInfo, implementation:
-(context: SessionContext, input: Record<string, number | string>) => Promise<AliceDirective>): AliceDirectiveFunction {
+(id: string, metadata: object, input: Record<string, number | string>) => Promise<AliceDirective>):
+  AliceDirectiveFunction {
   return {
     implementation,
     info,

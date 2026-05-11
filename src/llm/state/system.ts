@@ -1,12 +1,16 @@
-import { SessionContext, State } from '../types'
+import { State } from '../types'
 import { StateServer } from './types'
 
 export class SystemStateServer implements StateServer {
+  async getIndependentState (_sessionId: string): Promise<State> {
+    return {}
+  }
+
   getName (): string {
     return 'system'
   }
 
-  async getState (context: SessionContext): Promise<State> {
+  async getState (_sessionId: string, metadata: object): Promise<State> {
     return {
       date_time: {
         description: 'current time and date in DD-MM-YYYY HH:MM:SS format',
@@ -14,11 +18,11 @@ export class SystemStateServer implements StateServer {
       },
       input_person_age: {
         description: 'age of person who talked to you',
-        value: (context.metadata as { age: string }).age ?? 'unknown'
+        value: (metadata as { age: string }).age ?? 'unknown'
       },
       input_person_gender: {
         description: 'gender of person who talked to you',
-        value: (context.metadata as { gender: string }).gender ?? 'unknown'
+        value: (metadata as { gender: string }).gender ?? 'unknown'
       }
     }
   }

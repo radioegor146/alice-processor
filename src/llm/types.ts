@@ -54,11 +54,6 @@ export interface FunctionInfo {
 
 export type Functions = Record<string, FunctionInfo>
 
-export interface SessionContext {
-  id: string;
-  metadata: object;
-}
-
 export type State = Record<string, StateEntry>
 
 export interface StateEntry {

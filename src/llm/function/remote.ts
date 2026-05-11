@@ -1,16 +1,17 @@
-import { Functions, SessionContext } from '../types'
+import { Functions } from '../types'
 import { FunctionServer, functionsType } from './types'
 
 export class RemoteFunctionServer implements FunctionServer {
   constructor (private readonly url: string) {}
 
-  async callFunction (context: SessionContext, name: string,
+  async callFunction (sessionId: string, metadata: object, name: string,
     parameters: Record<string, number | string>): Promise<void> {
     await fetch(this.url, {
       body: JSON.stringify({
-        context,
+        metadata,
         name,
-        parameters
+        parameters,
+        sessionId
       }),
       headers: {
         'content-type': 'application/json'
@@ -19,15 +20,12 @@ export class RemoteFunctionServer implements FunctionServer {
     })
   }
 
-  async getFunctions (context: SessionContext): Promise<Functions> {
+  async getFunctions (): Promise<Functions> {
     const response = await fetch(this.url, {
-      body: JSON.stringify({
-        context
-      }),
       headers: {
         'content-type': 'application/json'
       },
-      method: 'POST'
+      method: 'GET'
     })
     return functionsType.parse(await response.json())
   }

@@ -1,6 +1,6 @@
 import z from 'zod'
 
-import { Functions, SessionContext } from '../types'
+import { Functions } from '../types'
 
 export const functionsType = z.record(z.object({
   arguments: z.record(z.object({
@@ -38,10 +38,10 @@ export const functionsType = z.record(z.object({
 }))
 
 export interface FunctionServer {
-  callFunction(context: SessionContext, functionName: string,
+  callFunction(sessionId: string, metadata: object, functionName: string,
     parameters: Record<string, number | string>): Promise<void>;
 
-  getFunctions(context: SessionContext): Promise<Functions>;
+  getFunctions(): Promise<Functions>;
 
   getName(): string;
 }
