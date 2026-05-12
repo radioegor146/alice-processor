@@ -75,7 +75,7 @@ export class HandlebarsPromptGenerator implements PromptGenerator {
   private getStateText (state: State): string {
     let text = ''
     for (const [name, entry] of Object.entries(state)) {
-      text += `${name} (${entry.description}): ${entry.value}\n`
+      text += `${name} (${entry.description}): jsonSchema: ${entry.value}\n`
     }
     return text.trim()
   }
