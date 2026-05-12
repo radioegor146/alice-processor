@@ -1,3 +1,4 @@
+import { continueTrace, Span, startInactiveSpan, startSpan } from '@sentry/node'
 import { JSONParser } from '@streamparser/json'
 import { Sema } from 'async-sema'
 import { LRUCache } from 'lru-cache'
@@ -118,6 +119,11 @@ const webSocketMessageType = z.union([
   })
 ])
 
+interface SentryContext {
+  baggage: string | undefined,
+  sentryTrace: string | undefined
+}
+
 export class Processor {
   private readonly cache: LRUCache<string, string>
   private readonly logger = getLogger<Processor>()
@@ -128,7 +134,14 @@ export class Processor {
     })
   }
 
-  async openSession (webSocket: WebSocket): Promise<Promise<void>> {
+  async openSession (webSocket: WebSocket, sentryContext: SentryContext): Promise<Promise<void>> {
+    const span = continueTrace(sentryContext, () => {
+      return startInactiveSpan({
+        name: 'Processor processing',
+        op: 'processor'
+      })
+    })
+
     const lock = new Sema(1)
     const messages: LLMMessage[] = []
     const sessionId = randomUUID()
@@ -141,6 +154,7 @@ export class Processor {
     })
     webSocket.addEventListener('close', error => {
       this.logger.info(`WebSocket session error: ${error.code}`)
+      span.end()
     })
     webSocket.addEventListener('message', async message => {
       await lock.acquire()
@@ -150,18 +164,23 @@ export class Processor {
         switch (decodedData.type) {
           case 'prepare': {
             this.logger.info(`Session ${sessionId} prepare`)
+            await startSpan({
+              name: 'Processor preparing',
+              op: 'prepare',
+              parentSpan: span
+            }, async prepareSpan => {
+              functions = await this.getFunctions(prepareSpan)
+              mcpFunctions = await this.getMCPFunctions(prepareSpan)
+              messages.push({
+                content: this.parameters.promptGenerator.generate(functions, mcpFunctions),
+                role: 'system'
+              })
 
-            functions = await this.getFunctions()
-            mcpFunctions = await this.getMCPFunctions()
-            messages.push({
-              content: this.parameters.promptGenerator.generate(functions, mcpFunctions),
-              role: 'system'
-            })
-
-            const state = await this.getIndependentState(sessionId)
-            messages.push({
-              content: this.parameters.promptGenerator.generateState(state),
-              role: 'system'
+              const state = await this.getIndependentState(sessionId, prepareSpan)
+              messages.push({
+                content: this.parameters.promptGenerator.generateState(state),
+                role: 'system'
+              })
             })
             break
           }
@@ -169,166 +188,195 @@ export class Processor {
             const request = decodedData.data
 
             this.logger.info(`Session ${sessionId} process: ${JSON.stringify(request)}`)
-
-            const state = await this.getState(sessionId, decodedData.data.metadata)
-            messages.push({
-              content: this.parameters.promptGenerator.generateState(state),
-              role: 'system'
-            })
-
-            const text = request.text.trim()
-
-            if (request.isExternalEvent) {
+            await startSpan({
+              name: 'Processor processing request',
+              op: 'process',
+              parentSpan: span
+            }, async processSpan => {
+              const state = await this.getState(sessionId, decodedData.data.metadata, processSpan)
               messages.push({
-                content: `External event happened: '${text}'`,
+                content: this.parameters.promptGenerator.generateState(state),
                 role: 'system'
               })
-            } else {
-              messages.push({
-                content: text,
-                role: 'user'
-              })
-            }
 
-            while (true) {
-              this.logger.info(`Processing ${messages.length} messages`)
+              const text = request.text.trim()
 
-              const directives: AliceDirective[] = []
-              const mcpFunctionsPromises: Promise<[string, string]>[] = []
-              let responseContent: string = ''
-              let structuredResponse: StructuredResponse
-
-              const cachedResponse = this.cache.get(text)
-
-              if (isFirstRequest && cachedResponse) {
-                responseContent = cachedResponse
-                this.logger.info(`Received answer from cache: ${responseContent}`)
-
-                structuredResponse = parseLLMResponse(JSON.parse(responseContent))
-
-                const [newDirectives, functionPromises] =
-                  await this.callFunctions(sessionId, request.metadata, functions,
-                    structuredResponse.functionCalls.filter(item => item.kind === 'default'))
-
-                functionPromises.catch(error => this.logger.error('Failed to call default functions: ', error))
-
-                directives.push(...newDirectives)
-
-                mcpFunctionsPromises.push(...this.callMCPFunctions(mcpFunctions,
-                  structuredResponse.functionCalls.filter(item => item.kind === 'mcp')))
-              } else {
-                this.logger.info('Querying LLM')
-                const callFunctionsPromises: Promise<[AliceDirective[], Promise<void>]>[] = []
-
-                const jsonParser = new JSONParser()
-                jsonParser.onValue = async (value) => {
-                  if (value.stack.length === 2 && value.stack[0]?.key === undefined &&
-                    value.stack[1]?.key === 'function_calls' && typeof value.key === 'number') {
-                    this.logger.info(`Found function call: ${JSON.stringify(value.value)}`)
-                    try {
-                      const parsed = parseFunctionCall(value.value)
-                      if (!parsed) {
-                        throw new Error('empty')
-                      }
-                      switch (parsed.kind) {
-                        case 'default': {
-                          callFunctionsPromises.push(this.callFunctions(sessionId, request.metadata,
-                            functions, [parsed]))
-                          break
-                        }
-                        case 'mcp': {
-                          mcpFunctionsPromises.push(...this.callMCPFunctions(mcpFunctions, [parsed]))
-                          break
-                        }
-                      }
-                    } catch (error) {
-                      this.logger.warn('Failed to parse function call: ', error)
-                    }
-                  }
-                }
-
-                let firstWasPrint = false
-
-                const beforeTime = new Date()
-                const response = await this.parameters.openAI.chat.completions.create({
-                  messages,
-                  model: this.parameters.model,
-                  stream: true
+              if (request.isExternalEvent) {
+                messages.push({
+                  content: `External event happened: '${text}'`,
+                  role: 'system'
                 })
-
-                for await (const chunk of response) {
-                  if (!firstWasPrint) {
-                    logger.info(`TTFT: ${Date.now() - beforeTime.getTime()}ms`)
-                    firstWasPrint = true
-                  }
-                  const part = chunk.choices[0]?.delta?.content
-                  if (!part) {
-                    continue
-                  }
-                  responseContent += part
-                  jsonParser.write(part)
-                }
-                logger.info(`Full query time: ${Date.now() - beforeTime.getTime()}ms`)
-
-                const result = await Promise.all(callFunctionsPromises)
-
-                for (const part of result) {
-                  directives.push(...part[0])
-                  part[1].catch(error => this.logger.error('Failed to call functions: ', error))
-                }
-
-                this.logger.info(`Received answer from LLM: '${responseContent}'`)
-
-                structuredResponse = parseLLMResponse(JSON.parse(responseContent))
+              } else {
+                messages.push({
+                  content: text,
+                  role: 'user'
+                })
               }
 
-              messages.push({
-                content: responseContent,
-                role: 'assistant'
-              })
+              while (true) {
+                if (!await startSpan({
+                  name: 'Single agent operation',
+                  op: 'single-agent-operation',
+                  parentSpan: processSpan
+                }, async singleOperationSpan => {
+                  this.logger.info(`Processing ${messages.length} messages`)
 
-              if (!structuredResponse.requireMoreInput && structuredResponse.canCache &&
+                  const directives: AliceDirective[] = []
+                  const mcpFunctionsPromises: Promise<[string, string]>[] = []
+                  let responseContent: string = ''
+                  let structuredResponse: StructuredResponse
+
+                  const cachedResponse = this.cache.get(text)
+
+                  if (isFirstRequest && cachedResponse) {
+                    responseContent = cachedResponse
+                    this.logger.info(`Received answer from cache: ${responseContent}`)
+
+                    structuredResponse = parseLLMResponse(JSON.parse(responseContent))
+
+                    const [newDirectives, functionPromises] =
+                      await this.callFunctions(sessionId, request.metadata, functions,
+                        structuredResponse.functionCalls.filter(item => item.kind === 'default'), singleOperationSpan)
+
+                    functionPromises.catch(error => this.logger.error('Failed to call default functions: ', error))
+
+                    directives.push(...newDirectives)
+
+                    mcpFunctionsPromises.push(...this.callMCPFunctions(mcpFunctions,
+                      structuredResponse.functionCalls.filter(item => item.kind === 'mcp'), singleOperationSpan))
+                  } else {
+                    this.logger.info('Querying LLM')
+                    const callFunctionsPromises: Promise<[AliceDirective[], Promise<void>]>[] = []
+
+                    const jsonParser = new JSONParser()
+                    jsonParser.onValue = async (value) => {
+                      if (value.stack.length === 2 && value.stack[0]?.key === undefined &&
+                        value.stack[1]?.key === 'function_calls' && typeof value.key === 'number') {
+                        this.logger.info(`Found function call: ${JSON.stringify(value.value)}`)
+                        try {
+                          const parsed = parseFunctionCall(value.value)
+                          if (!parsed) {
+                            throw new Error('empty')
+                          }
+                          switch (parsed.kind) {
+                            case 'default': {
+                              callFunctionsPromises.push(this.callFunctions(sessionId, request.metadata,
+                                functions, [parsed], singleOperationSpan))
+                              break
+                            }
+                            case 'mcp': {
+                              mcpFunctionsPromises.push(...this.callMCPFunctions(mcpFunctions, [parsed],
+                                singleOperationSpan))
+                              break
+                            }
+                          }
+                        } catch (error) {
+                          this.logger.warn('Failed to parse function call: ', error)
+                        }
+                      }
+                    }
+
+                    let firstWasPrint = false
+
+                    const beforeTime = new Date()
+                    const llmCompletionsFullSpan = startInactiveSpan({
+                      name: 'LLM full processing',
+                      op: 'llm-full',
+                      parentSpan: singleOperationSpan
+                    })
+                    const llmTTFTSpan = startInactiveSpan({
+                      name: 'LLM TTFT',
+                      op: 'llm-ttft',
+                      parentSpan: llmCompletionsFullSpan
+                    })
+
+                    const response = await this.parameters.openAI.chat.completions.create({
+                      messages,
+                      model: this.parameters.model,
+                      stream: true
+                    })
+
+                    for await (const chunk of response) {
+                      if (!firstWasPrint) {
+                        logger.info(`TTFT: ${Date.now() - beforeTime.getTime()}ms`)
+                        llmTTFTSpan.end()
+                        firstWasPrint = true
+                      }
+                      const part = chunk.choices[0]?.delta?.content
+                      if (!part) {
+                        continue
+                      }
+                      responseContent += part
+                      jsonParser.write(part)
+                    }
+                    logger.info(`Full query time: ${Date.now() - beforeTime.getTime()}ms`)
+                    llmCompletionsFullSpan.end()
+
+                    const result = await Promise.all(callFunctionsPromises)
+
+                    for (const part of result) {
+                      directives.push(...part[0])
+                      part[1].catch(error => this.logger.error('Failed to call functions: ', error))
+                    }
+
+                    this.logger.info(`Received answer from LLM: '${responseContent}'`)
+
+                    structuredResponse = parseLLMResponse(JSON.parse(responseContent))
+                  }
+
+                  messages.push({
+                    content: responseContent,
+                    role: 'assistant'
+                  })
+
+                  if (!structuredResponse.requireMoreInput && structuredResponse.canCache &&
                 isFirstRequest && mcpFunctionsPromises.length === 0) {
-                this.cache.set(text, responseContent)
-                this.logger.info(`Saved answer to cache: '${text}' -> ${responseContent}`)
-              }
+                    this.cache.set(text, responseContent)
+                    this.logger.info(`Saved answer to cache: '${text}' -> ${responseContent}`)
+                  }
 
-              isFirstRequest = false
+                  isFirstRequest = false
 
-              await new Promise<void>((resolve, reject) => webSocket.send(JSON.stringify({
-                data: {
-                  directives,
-                  finished: mcpFunctionsPromises.length === 0,
-                  requireMoreInput: structuredResponse.requireMoreInput,
-                  text: structuredResponse.text
-                },
-                type: 'partialResponse'
-              }), (error) => {
-                if (error) {
-                  reject(error)
-                } else {
-                  resolve()
+                  await new Promise<void>((resolve, reject) => webSocket.send(JSON.stringify({
+                    data: {
+                      directives,
+                      finished: mcpFunctionsPromises.length === 0,
+                      requireMoreInput: structuredResponse.requireMoreInput,
+                      text: structuredResponse.text
+                    },
+                    type: 'partialResponse'
+                  }), (error) => {
+                    if (error) {
+                      reject(error)
+                    } else {
+                      resolve()
+                    }
+                  }))
+
+                  if (mcpFunctionsPromises.length === 0) {
+                    if (structuredResponse.requireMoreInput) {
+                      webSocket.close()
+                    }
+                    return false
+                  }
+
+                  const result = await Promise.all(mcpFunctionsPromises)
+                  let toolCallResult = ''
+                  for (const [function_, value] of result) {
+                    toolCallResult += `${function_}: ${value}\n`
+                  }
+
+                  messages.push({
+                    content: toolCallResult,
+                    role: 'system'
+                  })
+
+                  return true
+                })) {
+                  break
                 }
-              }))
-
-              if (mcpFunctionsPromises.length === 0) {
-                if (structuredResponse.requireMoreInput) {
-                  webSocket.close()
-                }
-                break
               }
-
-              const result = await Promise.all(mcpFunctionsPromises)
-              let toolCallResult = ''
-              for (const [function_, value] of result) {
-                toolCallResult += `${function_}: ${value}\n`
-              }
-
-              messages.push({
-                content: toolCallResult,
-                role: 'system'
-              })
-            }
+            })
           }
         }
       } catch (error) {
@@ -340,7 +388,7 @@ export class Processor {
   }
 
   private async callFunctions (sessionId: string, metadata: object, functions: ExtendedFunctions,
-    functionCalls: FunctionCall[]): Promise<[AliceDirective[], Promise<void>]> {
+    functionCalls: FunctionCall[], parentSpan: Span): Promise<[AliceDirective[], Promise<void>]> {
     const directives: AliceDirective[] = []
 
     const promises: Promise<void>[] = []
@@ -356,7 +404,8 @@ export class Processor {
       }
 
       if (function_.server instanceof AliceDirectiveFunctionServer) {
-        const directive = await function_.server.callDirectiveFunction(sessionId, metadata, call.name, call.parameters)
+        const directive = await function_.server.callDirectiveFunction(sessionId, metadata,
+          call.name, call.parameters, parentSpan)
         if (!directive) {
           continue
         }
@@ -370,7 +419,7 @@ export class Processor {
             this.logger.info(`Calling ${call.name} with ${JSON.stringify(call.parameters)} after ${call.schedule} milliseconds`)
             await new Promise(resolve => setTimeout(resolve, call.schedule))
           }
-          await function_.server.callFunction(sessionId, metadata, call.name, call.parameters)
+          await function_.server.callFunction(sessionId, metadata, call.name, call.parameters, parentSpan)
         } catch (error) {
           this.logger.warn(`Failed to call function '${call.name}' with parameters ${JSON.stringify(call.parameters)}: `, error)
         }
@@ -381,7 +430,7 @@ export class Processor {
   }
 
   private callMCPFunctions (mcpFunctions: ExtendedMCPFunctions,
-    functionCalls: MCPFunctionCall[]): Promise<[string, string]>[] {
+    functionCalls: MCPFunctionCall[], parentSpan: Span): Promise<[string, string]>[] {
     const promises: Promise<[string, string]>[] = []
     for (const call of functionCalls) {
       const function_ = mcpFunctions[call.name]
@@ -392,7 +441,7 @@ export class Processor {
 
       promises.push((async () => {
         try {
-          return [call.name, await function_.server.callFunction(call.name, call.arguments)]
+          return [call.name, await function_.server.callFunction(call.name, call.arguments, parentSpan)]
         } catch (error) {
           this.logger.warn(`Failed to call function '${call.name}' with parameters ${JSON.stringify(call.arguments)}: `, error)
           return [call.name, `Failed to call function '${call.name}' with parameters ${JSON.stringify(call.arguments)}: ${error}`]
@@ -403,130 +452,154 @@ export class Processor {
     return promises
   }
 
-  private async getFunctions (): Promise<ExtendedFunctions> {
-    const promises: Promise<[FunctionServer, Functions, undefined | unknown]>[] = []
-    for (const server of this.parameters.functionServers) {
-      promises.push((async () => {
-        try {
-          const functions = await server.getFunctions()
-          return [server, functions, undefined]
-        } catch (error) {
-          return [server, {}, error]
-        }
-      })())
-    }
-    const resultFunctions: ExtendedFunctions = {}
-    const results = await Promise.all(promises)
-    for (const [server, state, error] of results) {
-      if (error) {
-        this.logger.warn(`Function server ${server.getName()} returned error while fetching functions: `, error)
-        continue
+  private async getFunctions (parentSpan: Span): Promise<ExtendedFunctions> {
+    return startSpan({
+      name: 'Requesting functions',
+      op: 'get-functions',
+      parentSpan
+    }, async span => {
+      const promises: Promise<[FunctionServer, Functions, undefined | unknown]>[] = []
+      for (const server of this.parameters.functionServers) {
+        promises.push((async () => {
+          try {
+            const functions = await server.getFunctions(span)
+            return [server, functions, undefined]
+          } catch (error) {
+            return [server, {}, error]
+          }
+        })())
       }
-      for (const [key, functionInfo] of Object.entries(state)) {
-        if (resultFunctions[key]) {
-          this.logger.warn(`Function server ${server.getName()} returned duplicate function entry '${key}'`)
+      const resultFunctions: ExtendedFunctions = {}
+      const results = await Promise.all(promises)
+      for (const [server, state, error] of results) {
+        if (error) {
+          this.logger.warn(`Function server ${server.getName()} returned error while fetching functions: `, error)
           continue
         }
-        resultFunctions[key] = {
-          ...functionInfo,
-          server
+        for (const [key, functionInfo] of Object.entries(state)) {
+          if (resultFunctions[key]) {
+            this.logger.warn(`Function server ${server.getName()} returned duplicate function entry '${key}'`)
+            continue
+          }
+          resultFunctions[key] = {
+            ...functionInfo,
+            server
+          }
         }
       }
-    }
-    return resultFunctions
+      return resultFunctions
+    })
   }
 
-  private async getIndependentState (sessionId: string): Promise<State> {
-    const promises: Promise<[StateServer, State, undefined | unknown]>[] = []
-    for (const server of this.parameters.stateServers) {
-      promises.push((async () => {
-        try {
-          const state = await server.getIndependentState(sessionId)
-          return [server, state, undefined]
-        } catch (error) {
-          return [server, {}, error]
-        }
-      })())
-    }
-    const resultState: State = {}
-    const results = await Promise.all(promises)
-    for (const [server, state, error] of results) {
-      if (error) {
-        this.logger.warn(`State server ${server.getName()} returned error: `, error)
-        continue
+  private async getIndependentState (sessionId: string, parentSpan: Span): Promise<State> {
+    return startSpan({
+      name: 'Requesting independent state',
+      op: 'get-independent-state',
+      parentSpan
+    }, async (span) => {
+      const promises: Promise<[StateServer, State, undefined | unknown]>[] = []
+      for (const server of this.parameters.stateServers) {
+        promises.push((async () => {
+          try {
+            const state = await server.getIndependentState(sessionId, span)
+            return [server, state, undefined]
+          } catch (error) {
+            return [server, {}, error]
+          }
+        })())
       }
-      for (const [key, stateEntry] of Object.entries(state)) {
-        if (resultState[key]) {
-          this.logger.warn(`State server ${server.getName()} returned duplicate state entry '${key}'`)
+      const resultState: State = {}
+      const results = await Promise.all(promises)
+      for (const [server, state, error] of results) {
+        if (error) {
+          this.logger.warn(`State server ${server.getName()} returned error: `, error)
           continue
         }
-        resultState[key] = stateEntry
+        for (const [key, stateEntry] of Object.entries(state)) {
+          if (resultState[key]) {
+            this.logger.warn(`State server ${server.getName()} returned duplicate state entry '${key}'`)
+            continue
+          }
+          resultState[key] = stateEntry
+        }
       }
-    }
-    return resultState
+      return resultState
+    })
   }
 
-  private async getMCPFunctions (): Promise<ExtendedMCPFunctions> {
-    const promises: Promise<[MCPServer, MCPFunctions, undefined | unknown]>[] = []
-    for (const server of this.parameters.mcpServers) {
-      promises.push((async () => {
-        try {
-          const functions = await server.getFunctions()
-          return [server, functions, undefined]
-        } catch (error) {
-          return [server, {}, error]
-        }
-      })())
-    }
-    const resultFunctions: ExtendedMCPFunctions = {}
-    const results = await Promise.all(promises)
-    for (const [server, state, error] of results) {
-      if (error) {
-        this.logger.warn(`MCP server ${server.getName()} returned error while fetching functions: `, error)
-        continue
+  private async getMCPFunctions (parentSpan: Span): Promise<ExtendedMCPFunctions> {
+    return startSpan({
+      name: 'Requesting MCP functions',
+      op: 'get-mcp-functions',
+      parentSpan
+    }, async span => {
+      const promises: Promise<[MCPServer, MCPFunctions, undefined | unknown]>[] = []
+      for (const server of this.parameters.mcpServers) {
+        promises.push((async () => {
+          try {
+            const functions = await server.getFunctions(span)
+            return [server, functions, undefined]
+          } catch (error) {
+            return [server, {}, error]
+          }
+        })())
       }
-      for (const [key, functionInfo] of Object.entries(state)) {
-        if (resultFunctions[key]) {
-          this.logger.warn(`MCP server ${server.getName()} returned duplicate function entry '${key}'`)
+      const resultFunctions: ExtendedMCPFunctions = {}
+      const results = await Promise.all(promises)
+      for (const [server, state, error] of results) {
+        if (error) {
+          this.logger.warn(`MCP server ${server.getName()} returned error while fetching functions: `, error)
           continue
         }
-        resultFunctions[key] = {
-          ...functionInfo,
-          server
+        for (const [key, functionInfo] of Object.entries(state)) {
+          if (resultFunctions[key]) {
+            this.logger.warn(`MCP server ${server.getName()} returned duplicate function entry '${key}'`)
+            continue
+          }
+          resultFunctions[key] = {
+            ...functionInfo,
+            server
+          }
         }
       }
-    }
-    return resultFunctions
+      return resultFunctions
+    })
   }
 
-  private async getState (sessionId: string, metadata: object): Promise<State> {
-    const promises: Promise<[StateServer, State, undefined | unknown]>[] = []
-    for (const server of this.parameters.stateServers) {
-      promises.push((async () => {
-        try {
-          const state = await server.getState(sessionId, metadata)
-          return [server, state, undefined]
-        } catch (error) {
-          return [server, {}, error]
-        }
-      })())
-    }
-    const resultState: State = {}
-    const results = await Promise.all(promises)
-    for (const [server, state, error] of results) {
-      if (error) {
-        this.logger.warn(`State server ${server.getName()} returned error: `, error)
-        continue
+  private async getState (sessionId: string, metadata: object, parentSpan: Span): Promise<State> {
+    return startSpan({
+      name: 'Requesting state',
+      op: 'get-state',
+      parentSpan
+    }, async span => {
+      const promises: Promise<[StateServer, State, undefined | unknown]>[] = []
+      for (const server of this.parameters.stateServers) {
+        promises.push((async () => {
+          try {
+            const state = await server.getState(sessionId, metadata, span)
+            return [server, state, undefined]
+          } catch (error) {
+            return [server, {}, error]
+          }
+        })())
       }
-      for (const [key, stateEntry] of Object.entries(state)) {
-        if (resultState[key]) {
-          this.logger.warn(`State server ${server.getName()} returned duplicate state entry '${key}'`)
+      const resultState: State = {}
+      const results = await Promise.all(promises)
+      for (const [server, state, error] of results) {
+        if (error) {
+          this.logger.warn(`State server ${server.getName()} returned error: `, error)
           continue
         }
-        resultState[key] = stateEntry
+        for (const [key, stateEntry] of Object.entries(state)) {
+          if (resultState[key]) {
+            this.logger.warn(`State server ${server.getName()} returned duplicate state entry '${key}'`)
+            continue
+          }
+          resultState[key] = stateEntry
+        }
       }
-    }
-    return resultState
+      return resultState
+    })
   }
 
   private validateParameters (function_: ExtendedFunctionInfo, callArguments: FunctionCallArguments): boolean {

@@ -1,3 +1,5 @@
+import { Span } from '@sentry/node'
+
 export interface MCPFunctionInfo {
   argumentsSchema: unknown;
   description: string;
@@ -6,9 +8,9 @@ export interface MCPFunctionInfo {
 export type MCPFunctions = Record<string, MCPFunctionInfo>
 
 export interface MCPServer {
-  callFunction(functionName: string, arguments_: unknown): Promise<string>;
+  callFunction(functionName: string, arguments_: unknown, parentSpan: Span): Promise<string>;
 
-  getFunctions(): Promise<MCPFunctions>;
+  getFunctions(parentSpan: Span): Promise<MCPFunctions>;
 
   getName(): string;
 

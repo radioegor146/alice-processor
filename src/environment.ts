@@ -20,6 +20,8 @@ const environmentType = z.object({
   PROCESSOR_STATE_SERVER_URLS: z.string().default('').transform(urls => urls.split(',').filter(Boolean)),
   PROMPT_TEMPLATE_PATH: z.string().default('prompt.handlebars'),
 
+  SENTRY_DSN: z.url().default('https://test@o0.ingest.sentry.io/0'),
+
   STATE_PROMPT_TEMPLATE_PATH: z.string().default('prompt-state.handlebars')
 })
 

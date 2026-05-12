@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@sentry/node": "^10.52.0",
     "@streamparser/json": "^0.0.22",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",

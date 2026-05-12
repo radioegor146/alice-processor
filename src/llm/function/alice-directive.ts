@@ -1,22 +1,35 @@
+import { Span, startSpan } from '@sentry/node'
+
 import { AliceDirective } from '../../processor'
 import { FunctionInfo, Functions } from '../types'
 import { FunctionServer } from './types'
 
 export interface AliceDirectiveFunction {
-  implementation: (id: string, metadata: object, input: Record<string, number | string>) => Promise<AliceDirective>,
+  implementation: (sessionId: string, metadata: object,
+    input: Record<string, number | string>) => Promise<AliceDirective>,
   info: FunctionInfo,
 }
 
 export class AliceDirectiveFunctionServer implements FunctionServer {
   constructor (private readonly directiveFunctions: Record<string, AliceDirectiveFunction>) {}
 
-  async callDirectiveFunction (id: string, metadata: object, functionName: string,
-    parameters: Record<string, number | string>): Promise<AliceDirective | null> {
-    const directiveFunction = this.directiveFunctions[functionName]
-    if (!directiveFunction) {
-      return null
-    }
-    return directiveFunction.implementation(id, metadata, parameters)
+  async callDirectiveFunction (sessionId: string, metadata: object, functionName: string,
+    parameters: Record<string, number | string>, parentSpan: Span): Promise<AliceDirective | null> {
+    return startSpan({
+      attributes: {
+        parameters: JSON.stringify(parameters, undefined, 2)
+      },
+      name: `Calling directive function ${sessionId}`,
+      parentSpan
+    }, async span => {
+      const directiveFunction = this.directiveFunctions[functionName]
+      if (!directiveFunction) {
+        return null
+      }
+      const result = await directiveFunction.implementation(sessionId, metadata, parameters)
+      span.setAttribute('result', JSON.stringify(result, undefined, 2))
+      return result
+    })
   }
 
   callFunction (): Promise<void> {

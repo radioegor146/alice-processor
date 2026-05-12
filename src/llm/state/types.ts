@@ -1,3 +1,4 @@
+import { Span } from '@sentry/node'
 import z from 'zod'
 
 import { State } from '../types'
@@ -8,9 +9,9 @@ export const stateType = z.record(z.string(), z.object({
 }))
 
 export interface StateServer {
-  getIndependentState(sessionId: string): Promise<State>
+  getIndependentState(sessionId: string, parentSpan: Span): Promise<State>
 
   getName(): string;
 
-  getState(sessionId: string, metadata: object): Promise<State>;
+  getState(sessionId: string, metadata: object, parentSpan: Span): Promise<State>;
 }

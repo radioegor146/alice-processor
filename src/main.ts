@@ -1,3 +1,4 @@
+import Sentry from '@sentry/node'
 import express from 'express'
 import fs from 'node:fs'
 import { OpenAI } from 'openai'
@@ -20,6 +21,12 @@ import { InMemorySessionStorage } from './session-storage/in-memory'
 
 const logger = getLogger()
 const environment = getEnvironment()
+
+Sentry.init({
+  defaultIntegrations: false,
+  dsn: environment.SENTRY_DSN,
+  tracesSampleRate: 1
+})
 
 const app = express()
 
@@ -98,8 +105,11 @@ server.on('upgrade', (request, socket, head) => {
   }
 })
 
-wsServer.on('connection', (websocket, _) => {
+wsServer.on('connection', (websocket, request) => {
   logger.debug('Got WebSocket connection')
 
-  processor.openSession(websocket)
+  processor.openSession(websocket, {
+    baggage: request.headers['baggage'] ? String(request.headers['baggage']) : undefined,
+    sentryTrace: request.headers['sentry-trace'] ? String(request.headers['sentry-trace']) : undefined
+  })
 })

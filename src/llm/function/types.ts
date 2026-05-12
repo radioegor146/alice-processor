@@ -1,3 +1,4 @@
+import { Span } from '@sentry/node'
 import z from 'zod'
 
 import { Functions } from '../types'
@@ -39,9 +40,9 @@ export const functionsType = z.record(z.string(), z.object({
 
 export interface FunctionServer {
   callFunction(sessionId: string, metadata: object, functionName: string,
-    parameters: Record<string, number | string>): Promise<void>;
+    parameters: Record<string, number | string>, parentSpan: Span): Promise<void>;
 
-  getFunctions(): Promise<Functions>;
+  getFunctions(parentSpan: Span): Promise<Functions>;
 
   getName(): string;
 }
