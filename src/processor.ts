@@ -28,28 +28,6 @@ const logger = getLogger()
 
 export type AliceDirective = SoundLouderDirective | SoundQuieterDirective | SoundSetLevelDirective
 
-export interface ProcessorPrepareRequest {
-  sessionId?: string | undefined;
-}
-
-export interface ProcessorPrepareResponse {
-  sessionId?: string | undefined;
-}
-
-export interface ProcessorRequest {
-  isExternalEvent?: boolean | undefined;
-  metadata: object;
-  sessionId?: string | undefined;
-  text: string;
-}
-
-export interface ProcessorResult {
-  directives: AliceDirective[];
-  requireMoreInput: boolean;
-  sessionId: string;
-  text: string;
-}
-
 export interface SoundLouderDirective {
   type: 'soundLouder';
 }
@@ -334,6 +312,9 @@ export class Processor {
               }))
 
               if (mcpFunctionsPromises.length === 0) {
+                if (structuredResponse.requireMoreInput) {
+                  webSocket.close()
+                }
                 break
               }
 
