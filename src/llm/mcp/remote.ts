@@ -15,6 +15,9 @@ export class RemoteMCPServer implements MCPServer {
 
   async callFunction (functionName: string, arguments_: unknown, parentSpan: Span): Promise<string> {
     return startSpan({
+      attributes: {
+        arguments: JSON.stringify(arguments_, undefined, 2)
+      },
       name: `Calling MCP function ${functionName} on ${this.getName()}`,
       op: 'call-mcp-function',
       parentSpan
