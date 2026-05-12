@@ -354,7 +354,7 @@ export class Processor {
                   }))
 
                   if (mcpFunctionsPromises.length === 0) {
-                    if (structuredResponse.requireMoreInput) {
+                    if (!structuredResponse.requireMoreInput) {
                       webSocket.close()
                     }
                     return false
