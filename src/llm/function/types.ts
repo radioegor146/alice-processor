@@ -2,8 +2,8 @@ import z from 'zod'
 
 import { Functions } from '../types'
 
-export const functionsType = z.record(z.object({
-  arguments: z.record(z.object({
+export const functionsType = z.record(z.string(), z.object({
+  arguments: z.record(z.string(), z.object({
     constraints: z.discriminatedUnion('type', [
       z.object({
         argumentType: z.literal('number'),

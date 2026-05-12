@@ -81,7 +81,7 @@ app.use(express.json())
 
 const server = app.listen(PORT, error => {
   if (error) {
-    logger.fatal(`Failed to start on :${PORT}: ${error}`)
+    logger.fatal(`Failed to start on :${PORT}: `, error)
     return
   }
   logger.info(`Started on :${PORT}`)

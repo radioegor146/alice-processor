@@ -79,7 +79,7 @@ interface ProcessorParameters {
 }
 
 const functionCallType = z.object({
-  args: z.record(z.union([z.number(), z.string()])),
+  args: z.record(z.string(), z.union([z.number(), z.string()])),
   name: z.string(),
   schedule: z.string().optional()
 })
@@ -250,7 +250,7 @@ export class Processor {
 
               for (const part of result) {
                 directives.push(...part[0])
-                part[1].catch(error => this.logger.error(`Failed to call functions: ${error}`))
+                part[1].catch(error => this.logger.error('Failed to call functions: ', error))
               }
 
               this.logger.info(`Received answer from LLM: '${responseContent}'`)
@@ -273,7 +273,7 @@ export class Processor {
               const [newDirectives, functionPromises] =
               await this.callFunctions(sessionId, request.metadata, functions, structuredResponse.functionCalls)
 
-              functionPromises.catch(error => this.logger.error(`Failed to call functions: ${error}`))
+              functionPromises.catch(error => this.logger.error('Failed to call functions: ', error))
 
               directives.push(...newDirectives)
             }
@@ -337,7 +337,7 @@ export class Processor {
           }
           await function_.server.callFunction(sessionId, metadata, call.name, call.parameters)
         } catch (error) {
-          this.logger.warn(`Failed to call function '${call.name}' with parameters ${JSON.stringify(call.parameters)}: ${error}`)
+          this.logger.warn(`Failed to call function '${call.name}' with parameters ${JSON.stringify(call.parameters)}: `, error)
         }
       })())
     }
@@ -361,7 +361,7 @@ export class Processor {
     const results = await Promise.all(promises)
     for (const [server, state, error] of results) {
       if (error) {
-        this.logger.warn(`Function server ${server.getName()} returned error while fetching functions: ${error}`)
+        this.logger.warn(`Function server ${server.getName()} returned error while fetching functions: `, error)
         continue
       }
       for (const [key, functionInfo] of Object.entries(state)) {
@@ -394,7 +394,7 @@ export class Processor {
     const results = await Promise.all(promises)
     for (const [server, state, error] of results) {
       if (error) {
-        this.logger.warn(`State server ${server.getName()} returned error: ${error}`)
+        this.logger.warn(`State server ${server.getName()} returned error: `, error)
         continue
       }
       for (const [key, stateEntry] of Object.entries(state)) {
@@ -424,7 +424,7 @@ export class Processor {
     const results = await Promise.all(promises)
     for (const [server, state, error] of results) {
       if (error) {
-        this.logger.warn(`State server ${server.getName()} returned error: ${error}`)
+        this.logger.warn(`State server ${server.getName()} returned error: `, error)
         continue
       }
       for (const [key, stateEntry] of Object.entries(state)) {

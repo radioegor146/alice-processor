@@ -16,7 +16,9 @@ export class RemoteStateServer implements StateServer {
       },
       method: 'PUT'
     })
-    return stateType.parse(await response.json())
+    const json = await response.json()
+    console.info(json)
+    return stateType.parse(json)
   }
 
   getName (): string {
@@ -36,6 +38,8 @@ export class RemoteStateServer implements StateServer {
       },
       method: 'POST'
     })
-    return stateType.parse(await response.json())
+    const json = await response.json()
+    console.info(json)
+    return stateType.parse(json)
   }
 }

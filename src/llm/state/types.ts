@@ -2,7 +2,7 @@ import z from 'zod'
 
 import { State } from '../types'
 
-export const stateType = z.record(z.object({
+export const stateType = z.record(z.string(), z.object({
   description: z.string(),
   value: z.string()
 }))
