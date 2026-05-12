@@ -18,8 +18,11 @@ export class RemoteMCPServer implements MCPServer {
       arguments: arguments_ as unknown as { [k: string]: unknown },
       name: functionName.slice(this.name.length + 1)
     })
-    this.logger.info(`Response: ${JSON.stringify(response.content)}`)
-    return response.content as string
+    const responseItems = response.content as unknown as {
+      text: ''
+      type: 'text' | string,
+    }[]
+    return String(responseItems[0]?.text ?? 'N/A')
   }
 
   async getFunctions (): Promise<MCPFunctions> {

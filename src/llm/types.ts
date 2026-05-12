@@ -55,6 +55,12 @@ export interface FunctionInfo {
 
 export type Functions = Record<string, FunctionInfo>
 
+export interface LLMMessage {
+  content: string
+  name?: string
+  role: 'assistant' | 'system' | 'user',
+}
+
 export interface MCPFunctionCall {
   arguments: unknown
   kind: 'mcp',

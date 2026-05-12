@@ -3,7 +3,6 @@ import { Sema } from 'async-sema'
 import { LRUCache } from 'lru-cache'
 import { randomUUID } from 'node:crypto'
 import { OpenAI } from 'openai'
-import { ChatCompletionMessageParam } from 'openai/src/resources/chat/completions/completions'
 import { WebSocket } from 'ws'
 import z from 'zod'
 
@@ -18,6 +17,7 @@ import {
   FunctionCallArguments,
   FunctionInfo,
   Functions,
+  LLMMessage,
   MCPFunctionCall,
   State
 } from './llm/types'
@@ -60,7 +60,7 @@ interface ProcessorParameters {
   model: string;
   openAI: OpenAI;
   promptGenerator: PromptGenerator;
-  sessionStorage: SessionStorage<ChatCompletionMessageParam[]>;
+  sessionStorage: SessionStorage<LLMMessage[]>;
   stateServers: StateServer[];
 }
 
@@ -130,7 +130,7 @@ export class Processor {
 
   async openSession (webSocket: WebSocket): Promise<Promise<void>> {
     const lock = new Sema(1)
-    const messages: ChatCompletionMessageParam[] = []
+    const messages: LLMMessage[] = []
     const sessionId = randomUUID()
     let isFirstRequest = true
     let functions: ExtendedFunctions
@@ -326,7 +326,7 @@ export class Processor {
 
               messages.push({
                 content: toolCallResult,
-                role: 'function'
+                role: 'system'
               })
             }
           }

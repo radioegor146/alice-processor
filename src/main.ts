@@ -1,11 +1,9 @@
-import cors from 'cors'
-import dotenv from 'dotenv'
 import express from 'express'
 import fs from 'node:fs'
 import { OpenAI } from 'openai'
-import { ChatCompletionMessageParam } from 'openai/src/resources/chat/completions/completions'
 import { Server as WSServer } from 'ws'
 
+import { getEnvironment } from './environment'
 import { createAliceDirectiveFunctionServer } from './llm/function/alice-directive'
 import { RemoteFunctionServer } from './llm/function/remote'
 import { FunctionServer } from './llm/function/types'
@@ -15,56 +13,37 @@ import { HandlebarsPromptGenerator } from './llm/prompt-generator/handlebars'
 import { RemoteStateServer } from './llm/state/remote'
 import { SystemStateServer } from './llm/state/system'
 import { StateServer } from './llm/state/types'
+import { LLMMessage } from './llm/types'
 import { getLogger } from './logger'
 import { Processor } from './processor'
 import { InMemorySessionStorage } from './session-storage/in-memory'
 
 const logger = getLogger()
-
-dotenv.config({
-  path: '.env.local'
-})
-dotenv.config()
-
-const PORT = Number.parseInt(process.env.PORT || '8080')
-
-const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL ?? 'https://llm.bksp.in'
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? ''
-const OPENAI_MODEL = process.env.OPENAI_MODEL ?? 'qwen2.5-coder-7b-instruct'
-
-const PROCESSOR_PROMPT_TEMPLATE_PATH = process.env.PROMPT_TEMPLATE_PATH ?? 'prompt.handlebars'
-const PROCESSOR_STATE_PROMPT_TEMPLATE_PATH = process.env.STATE_PROMPT_TEMPLATE_PATH ?? 'prompt-state.handlebars'
-const PROCESSOR_FUNCTION_SERVER_URLS = (process.env.PROCESSOR_FUNCTION_SERVER_URLS ?? '').split(',').filter(Boolean)
-const PROCESSOR_STATE_SERVER_URLS = (process.env.PROCESSOR_STATE_SERVER_URLS ?? '').split(',').filter(Boolean)
-const PROCESSOR_MCP_SERVER_URLS = (process.env.PROCESSOR_MCP_SERVER_URLS ?? '').split(',').filter(Boolean)
-
-const CACHE_SIZE = Number.parseInt(process.env.CACHE_SIZE || '1000')
+const environment = getEnvironment()
 
 const app = express()
 
-app.use(cors())
-
 const openAI = new OpenAI({
-  apiKey: OPENAI_API_KEY,
-  baseURL: OPENAI_BASE_URL,
+  apiKey: environment.OPENAI_API_KEY,
+  baseURL: environment.OPENAI_BASE_URL,
 })
 
 const stateServers: StateServer[] = [
   new SystemStateServer()
 ]
-for (const url of PROCESSOR_STATE_SERVER_URLS) {
+for (const url of environment.PROCESSOR_STATE_SERVER_URLS) {
   stateServers.push(new RemoteStateServer(url))
 }
 
 const functionServers: FunctionServer[] = [
   createAliceDirectiveFunctionServer()
 ]
-for (const url of PROCESSOR_FUNCTION_SERVER_URLS) {
+for (const url of environment.PROCESSOR_FUNCTION_SERVER_URLS) {
   functionServers.push(new RemoteFunctionServer(url))
 }
 
 const mcpServers: MCPServer[] = []
-for (const url of PROCESSOR_MCP_SERVER_URLS) {
+for (const url of environment.PROCESSOR_MCP_SERVER_URLS) {
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   mcpServers.push(new RemoteMCPServer(url.split('#')[1]!, url.split('#')[0]!))
 }
@@ -82,17 +61,17 @@ for (const url of PROCESSOR_MCP_SERVER_URLS) {
 })().catch(error => logger.error(error))
 
 const promptGenerator = new HandlebarsPromptGenerator(
-  fs.readFileSync(PROCESSOR_PROMPT_TEMPLATE_PATH).toString('utf8'),
-  fs.readFileSync(PROCESSOR_STATE_PROMPT_TEMPLATE_PATH).toString('utf8')
+  fs.readFileSync(environment.PROMPT_TEMPLATE_PATH).toString('utf8'),
+  fs.readFileSync(environment.STATE_PROMPT_TEMPLATE_PATH).toString('utf8')
 )
 
-const sessionStorage = new InMemorySessionStorage<ChatCompletionMessageParam[]>()
+const sessionStorage = new InMemorySessionStorage<LLMMessage[]>()
 
 const processor = new Processor({
-  cacheSize: CACHE_SIZE,
+  cacheSize: environment.CACHE_SIZE,
   functionServers,
   mcpServers,
-  model: OPENAI_MODEL,
+  model: environment.OPENAI_MODEL,
   openAI,
   promptGenerator,
   sessionStorage,
@@ -101,12 +80,12 @@ const processor = new Processor({
 
 app.use(express.json())
 
-const server = app.listen(PORT, error => {
+const server = app.listen(environment.PORT, error => {
   if (error) {
-    logger.fatal(`Failed to start on :${PORT}: `, error)
+    logger.fatal(`Failed to start on :${environment.PORT}: `, error)
     return
   }
-  logger.info(`Started on :${PORT}`)
+  logger.info(`Started on :${environment.PORT}`)
 })
 
 const wsServer = new WSServer({ noServer: true })
