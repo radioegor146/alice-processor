@@ -173,7 +173,6 @@ export class Processor {
             const request = decodedData.data
 
             this.logger.info(`Session ${sessionId} process: ${JSON.stringify(request)}`)
-            this.logger.info(`Received request: ${JSON.stringify(request, undefined, 4)}`)
 
             const state = await this.getState(sessionId, decodedData.data.metadata)
             messages.push({
@@ -194,6 +193,8 @@ export class Processor {
                 role: 'user'
               })
             }
+
+            this.logger.info(`Processing ${messages.length} messages`)
 
             let responseContent: string = ''
 
