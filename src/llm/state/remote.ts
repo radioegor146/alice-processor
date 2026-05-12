@@ -7,9 +7,7 @@ export class RemoteStateServer implements StateServer {
   async getIndependentState (sessionId: string): Promise<State> {
     const response = await fetch(this.url, {
       body: JSON.stringify({
-        context: {
-          sessionId
-        }
+        sessionId
       }),
       headers: {
         'content-type': 'application/json'
@@ -28,10 +26,8 @@ export class RemoteStateServer implements StateServer {
   async getState (sessionId: string, metadata: object): Promise<State> {
     const response = await fetch(this.url, {
       body: JSON.stringify({
-        context: {
-          metadata,
-          sessionId
-        }
+        metadata,
+        sessionId
       }),
       headers: {
         'content-type': 'application/json'
