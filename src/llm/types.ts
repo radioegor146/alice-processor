@@ -40,6 +40,7 @@ export interface FunctionArgumentValueStringVariantsConstraints {
 }
 
 export interface FunctionCall {
+  kind: 'default'
   name: string;
   parameters: FunctionCallArguments;
   schedule?: number;
@@ -54,15 +55,15 @@ export interface FunctionInfo {
 
 export type Functions = Record<string, FunctionInfo>
 
+export interface MCPFunctionCall {
+  arguments: unknown
+  kind: 'mcp',
+  name: string;
+}
+
 export type State = Record<string, StateEntry>
 
 export interface StateEntry {
   description: string;
   value: string;
-}
-export interface StructuredResponse {
-  canCache: boolean;
-  functionCalls: FunctionCall[];
-  requireMoreInput: boolean;
-  text: string;
 }

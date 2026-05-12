@@ -9,6 +9,7 @@ import { Server as WSServer } from 'ws'
 import { createAliceDirectiveFunctionServer } from './llm/function/alice-directive'
 import { RemoteFunctionServer } from './llm/function/remote'
 import { FunctionServer } from './llm/function/types'
+import { RemoteMCPServer } from './llm/mcp/remote'
 import { HandlebarsPromptGenerator } from './llm/prompt-generator/handlebars'
 import { RemoteStateServer } from './llm/state/remote'
 import { SystemStateServer } from './llm/state/system'
@@ -34,6 +35,7 @@ const PROCESSOR_PROMPT_TEMPLATE_PATH = process.env.PROMPT_TEMPLATE_PATH ?? 'prom
 const PROCESSOR_STATE_PROMPT_TEMPLATE_PATH = process.env.STATE_PROMPT_TEMPLATE_PATH ?? 'prompt-state.handlebars'
 const PROCESSOR_FUNCTION_SERVER_URLS = (process.env.PROCESSOR_FUNCTION_SERVER_URLS ?? '').split(',').filter(Boolean)
 const PROCESSOR_STATE_SERVER_URLS = (process.env.PROCESSOR_STATE_SERVER_URLS ?? '').split(',').filter(Boolean)
+const PROCESSOR_MCP_SERVER_URLS = (process.env.PROCESSOR_MCP_SERVER_URLS ?? '').split(',').filter(Boolean)
 
 const CACHE_SIZE = Number.parseInt(process.env.CACHE_SIZE || '1000')
 
@@ -60,6 +62,12 @@ for (const url of PROCESSOR_FUNCTION_SERVER_URLS) {
   functionServers.push(new RemoteFunctionServer(url))
 }
 
+const mcpServers: MCPServer[] = []
+for (const url of PROCESSOR_MCP_SERVER_URLS) {
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  mcpServers.push(new RemoteMCPServer(url.split('#')[1]!, url.split('#')[0]!))
+}
+
 const promptGenerator = new HandlebarsPromptGenerator(
   fs.readFileSync(PROCESSOR_PROMPT_TEMPLATE_PATH).toString('utf8'),
   fs.readFileSync(PROCESSOR_STATE_PROMPT_TEMPLATE_PATH).toString('utf8')
@@ -70,6 +78,7 @@ const sessionStorage = new InMemorySessionStorage<ChatCompletionMessageParam[]>(
 const processor = new Processor({
   cacheSize: CACHE_SIZE,
   functionServers,
+  mcpServers,
   model: OPENAI_MODEL,
   openAI,
   promptGenerator,

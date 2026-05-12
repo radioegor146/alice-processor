@@ -15,7 +15,6 @@ export class RemoteStateServer implements StateServer {
       method: 'PUT'
     })
     const json = await response.json()
-    console.info(json)
     return stateType.parse(json)
   }
 
@@ -35,7 +34,6 @@ export class RemoteStateServer implements StateServer {
       method: 'POST'
     })
     const json = await response.json()
-    console.info(json)
     return stateType.parse(json)
   }
 }

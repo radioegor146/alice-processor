@@ -1,13 +1,14 @@
 import Handlebars from 'handlebars'
 
+import { MCPFunctions } from '../mcp/types'
 import { FunctionArgument, FunctionArgumentValueConstraints, Functions, State } from '../types'
 import { PromptGenerator } from './types'
 
 export class HandlebarsPromptGenerator implements PromptGenerator {
-  private readonly template: HandlebarsTemplateDelegate
   private readonly stateTemplate: HandlebarsTemplateDelegate
+  private readonly template: HandlebarsTemplateDelegate
 
-  constructor (private readonly rawTemplate: string, private readonly rawStateTemplate: string) {
+  constructor (rawTemplate: string, rawStateTemplate: string) {
     this.template = Handlebars.compile(rawTemplate, {
       noEscape: true
     })
@@ -16,15 +17,15 @@ export class HandlebarsPromptGenerator implements PromptGenerator {
     })
   }
 
-  generateState(state: State): string {
-    return this.stateTemplate({
-      stateText: this.getStateText(state)
+  generate (functions: Functions, mcpFunctions: MCPFunctions): string {
+    return this.template({
+      functionsText: `${this.getFunctionsText(functions)}\n${this.getMCPFunctionsText(mcpFunctions)}`
     })
   }
 
-  generate (functions: Functions): string {
-    return this.template({
-      functionsText: this.getFunctionsText(functions)
+  generateState (state: State): string {
+    return this.stateTemplate({
+      stateText: this.getStateText(state)
     })
   }
 
@@ -59,6 +60,14 @@ export class HandlebarsPromptGenerator implements PromptGenerator {
     let text = ''
     for (const [name, functionInfo] of Object.entries(functions)) {
       text += `${name} (${functionInfo.description})${this.getFunctionArgumentsText(functionInfo.arguments)}\n`
+    }
+    return text
+  }
+
+  private getMCPFunctionsText (mcpFunctions: MCPFunctions): string {
+    let text = ''
+    for (const [name, functionInfo] of Object.entries(mcpFunctions)) {
+      text += `${name} (${functionInfo.description}): ${JSON.stringify(functionInfo.argumentsSchema)}\n`
     }
     return text
   }
