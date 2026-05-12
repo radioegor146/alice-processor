@@ -10,6 +10,7 @@ import { createAliceDirectiveFunctionServer } from './llm/function/alice-directi
 import { RemoteFunctionServer } from './llm/function/remote'
 import { FunctionServer } from './llm/function/types'
 import { RemoteMCPServer } from './llm/mcp/remote'
+import { MCPServer } from './llm/mcp/types'
 import { HandlebarsPromptGenerator } from './llm/prompt-generator/handlebars'
 import { RemoteStateServer } from './llm/state/remote'
 import { SystemStateServer } from './llm/state/system'
@@ -67,6 +68,18 @@ for (const url of PROCESSOR_MCP_SERVER_URLS) {
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   mcpServers.push(new RemoteMCPServer(url.split('#')[1]!, url.split('#')[0]!))
 }
+
+(async () => {
+  for (const server of mcpServers) {
+    try {
+      await server.init()
+      logger.info(`${server.getName()} initialized successfully`)
+    } catch (error) {
+      logger.error(`Failed to init ${server.getName()} server: `, error)
+    }
+  }
+// eslint-disable-next-line unicorn/prefer-top-level-await
+})().catch(error => logger.error(error))
 
 const promptGenerator = new HandlebarsPromptGenerator(
   fs.readFileSync(PROCESSOR_PROMPT_TEMPLATE_PATH).toString('utf8'),

@@ -11,4 +11,6 @@ export interface MCPServer {
   getFunctions(): Promise<MCPFunctions>;
 
   getName(): string;
+
+  init(): Promise<void>
 }
