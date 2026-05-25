@@ -58,9 +58,9 @@ export class RemoteFunctionServer implements FunctionServer {
     }, async () => {
       await fetch(this.url, {
         body: JSON.stringify({
-          arguments_,
           metadata,
           name,
+          parameters: arguments_,
           sessionId
         }),
         headers: {
