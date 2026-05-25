@@ -409,7 +409,7 @@ export class Processor {
               return [call.name, `Arguments parse error: ${JSON.stringify(arguments_.error.issues)}`]
             }
             return [call.name, await function_.server.callFunction(sessionId, metadata, call.name,
-              arguments_, parentSpan)]
+              arguments_.data, parentSpan)]
           } catch (error) {
             this.logger.warn(`Failed to call function '${call.name}' with parameters ${JSON.stringify(call.arguments)}: `, error)
             return [call.name, `Error: ${error}`]
@@ -424,11 +424,10 @@ export class Processor {
               return
             }
             if (call.schedule) {
-              this.logger.info(`Calling ${call.name} with ${JSON.stringify(arguments_)} after ${call.schedule} milliseconds`)
+              this.logger.info(`Calling ${call.name} with ${JSON.stringify(arguments_.data)} after ${call.schedule} milliseconds`)
               await new Promise(resolve => setTimeout(resolve, call.schedule))
-              return
             }
-            await function_.server.callFunction(sessionId, metadata, call.name, arguments_, parentSpan)
+            await function_.server.callFunction(sessionId, metadata, call.name, arguments_.data, parentSpan)
           } catch (error) {
             this.logger.warn(`Failed to call function '${call.name}' with parameters ${JSON.stringify(call.arguments)}: `, error)
           }
