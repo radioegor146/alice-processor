@@ -27,6 +27,8 @@ export class SystemStateServer implements StateServer {
     }
   }
 
+  async initialize (): Promise<void> {}
+
   private getCurrentTimeAndDateFormatted (): string {
     const date = new Date()
     return `${date.getDate().toString().padStart(2, '0')}-${

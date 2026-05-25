@@ -9,17 +9,13 @@ import z from 'zod'
 
 import { AliceDirectiveFunctionServer } from './llm/function/alice-directive'
 import { FunctionServer } from './llm/function/types'
-import { MCPFunctionInfo, MCPFunctions, MCPServer } from './llm/mcp/types'
 import { PromptGenerator } from './llm/prompt-generator/types'
 import { StateServer } from './llm/state/types'
 import {
-  FunctionArgument,
   FunctionCall,
-  FunctionCallArguments,
   FunctionInfo,
   Functions,
   LLMMessage,
-  MCPFunctionCall,
   State
 } from './llm/types'
 import { getLogger } from './logger'
@@ -48,16 +44,9 @@ type ExtendedFunctionInfo = FunctionInfo & {
 
 type ExtendedFunctions = Record<string, ExtendedFunctionInfo>
 
-type ExtendedMCPFunctionInfo = MCPFunctionInfo & {
-  server: MCPServer
-}
-
-type ExtendedMCPFunctions = Record<string, ExtendedMCPFunctionInfo>
-
 interface ProcessorParameters {
   cacheSize: number;
   functionServers: FunctionServer[];
-  mcpServers: MCPServer[];
   model: string;
   openAI: OpenAI;
   promptGenerator: PromptGenerator;
@@ -66,15 +55,14 @@ interface ProcessorParameters {
 }
 
 const functionCallType = z.object({
-  args: z.record(z.string(), z.union([z.number(), z.string()])).optional(),
-  jsonArgs: z.unknown().optional(),
+  args: z.unknown().optional(),
   name: z.string(),
   schedule: z.string().optional()
 })
 
 interface StructuredResponse {
   canCache: boolean
-  functionCalls: (FunctionCall | MCPFunctionCall)[]
+  functionCalls: FunctionCall[]
   requireMoreInput: boolean
   text: string
 }
@@ -147,7 +135,6 @@ export class Processor {
     const sessionId = randomUUID()
     let isFirstRequest = true
     let functions: ExtendedFunctions
-    let mcpFunctions: ExtendedMCPFunctions
 
     webSocket.addEventListener('error', error => {
       this.logger.info(`WebSocket session error: ${error.error}`)
@@ -170,9 +157,8 @@ export class Processor {
               parentSpan: span
             }, async prepareSpan => {
               functions = await this.getFunctions(prepareSpan)
-              mcpFunctions = await this.getMCPFunctions(prepareSpan)
               messages.push({
-                content: this.parameters.promptGenerator.generate(functions, mcpFunctions),
+                content: this.parameters.promptGenerator.generate(functions),
                 role: 'system'
               })
 
@@ -222,7 +208,9 @@ export class Processor {
                   this.logger.info(`Processing ${messages.length} messages`)
 
                   const directives: AliceDirective[] = []
-                  const mcpFunctionsPromises: Promise<[string, string]>[] = []
+                  const hasResponsePromises: Promise<[string, string]>[] = []
+                  const noResponsePromises: Promise<void>[] = []
+
                   let responseContent: string = ''
                   let structuredResponse: StructuredResponse
 
@@ -234,19 +222,17 @@ export class Processor {
 
                     structuredResponse = parseLLMResponse(JSON.parse(responseContent))
 
-                    const [newDirectives, functionPromises] =
+                    const [newDirectives, functionsPromises, functionsWithResponsePromises] =
                       await this.callFunctions(sessionId, request.metadata, functions,
-                        structuredResponse.functionCalls.filter(item => item.kind === 'default'), singleOperationSpan)
-
-                    functionPromises.catch(error => this.logger.error('Failed to call default functions: ', error))
+                        structuredResponse.functionCalls, singleOperationSpan)
 
                     directives.push(...newDirectives)
-
-                    mcpFunctionsPromises.push(...this.callMCPFunctions(mcpFunctions,
-                      structuredResponse.functionCalls.filter(item => item.kind === 'mcp'), singleOperationSpan))
+                    hasResponsePromises.push(...functionsWithResponsePromises)
+                    noResponsePromises.push(...functionsPromises)
                   } else {
                     this.logger.info('Querying LLM')
-                    const callFunctionsPromises: Promise<[AliceDirective[], Promise<void>]>[] = []
+                    const callFunctionsPromises: Promise<[AliceDirective[], Promise<void>,
+                      Promise<[string, string]>]>[] = []
 
                     const jsonParser = new JSONParser()
                     jsonParser.onValue = async (value) => {
@@ -258,18 +244,13 @@ export class Processor {
                           if (!parsed) {
                             throw new Error('empty')
                           }
-                          switch (parsed.kind) {
-                            case 'default': {
-                              callFunctionsPromises.push(this.callFunctions(sessionId, request.metadata,
-                                functions, [parsed], singleOperationSpan))
-                              break
-                            }
-                            case 'mcp': {
-                              mcpFunctionsPromises.push(...this.callMCPFunctions(mcpFunctions, [parsed],
-                                singleOperationSpan))
-                              break
-                            }
-                          }
+                          const [newDirectives, functionsPromises, functionsWithResponsePromises] =
+                          await this.callFunctions(sessionId, request.metadata, functions,
+                            [parsed], singleOperationSpan)
+
+                          directives.push(...newDirectives)
+                          hasResponsePromises.push(...functionsWithResponsePromises)
+                          noResponsePromises.push(...functionsPromises)
                         } catch (error) {
                           this.logger.warn('Failed to parse function call: ', error)
                         }
@@ -324,13 +305,15 @@ export class Processor {
                     structuredResponse = parseLLMResponse(JSON.parse(responseContent))
                   }
 
+                  Promise.all(noResponsePromises).catch(error => this.logger.warn(`Failed to call no-response functions: ${error}`))
+
                   messages.push({
                     content: responseContent,
                     role: 'assistant'
                   })
 
                   if (!structuredResponse.requireMoreInput && structuredResponse.canCache &&
-                isFirstRequest && mcpFunctionsPromises.length === 0) {
+                    isFirstRequest && hasResponsePromises.length === 0) {
                     this.cache.set(text, responseContent)
                     this.logger.info(`Saved answer to cache: '${text}' -> ${responseContent}`)
                   }
@@ -340,7 +323,7 @@ export class Processor {
                   await new Promise<void>((resolve, reject) => webSocket.send(JSON.stringify({
                     data: {
                       directives,
-                      finished: mcpFunctionsPromises.length === 0,
+                      finished: hasResponsePromises.length === 0,
                       requireMoreInput: structuredResponse.requireMoreInput,
                       text: structuredResponse.text
                     },
@@ -353,14 +336,14 @@ export class Processor {
                     }
                   }))
 
-                  if (mcpFunctionsPromises.length === 0) {
+                  if (hasResponsePromises.length === 0) {
                     if (!structuredResponse.requireMoreInput) {
                       webSocket.close()
                     }
                     return false
                   }
 
-                  const result = await Promise.all(mcpFunctionsPromises)
+                  const result = await Promise.all(hasResponsePromises)
                   let toolCallResult = ''
                   for (const [function_, value] of result) {
                     toolCallResult += `${function_}: ${value}\n`
@@ -388,24 +371,23 @@ export class Processor {
   }
 
   private async callFunctions (sessionId: string, metadata: object, functions: ExtendedFunctions,
-    functionCalls: FunctionCall[], parentSpan: Span): Promise<[AliceDirective[], Promise<void>]> {
+    functionCalls: FunctionCall[], parentSpan: Span): Promise<[AliceDirective[], Promise<void>[],
+      Promise<[string, string]>[]]> {
     const directives: AliceDirective[] = []
 
-    const promises: Promise<void>[] = []
+    const noResponsePromises: Promise<void>[] = []
+    const hasResponsePromises: Promise<[string, string]>[] = []
+
     for (const call of functionCalls) {
       const function_ = functions[call.name]
       if (!function_) {
         this.logger.warn(`Tried to call non-existent function '${call.name}'`)
         continue
       }
-      if (!this.validateParameters(function_, call.parameters)) {
-        this.logger.warn(`Tried to call function '${call.name}' with invalid parameters: ${JSON.stringify(call.parameters)}`)
-        continue
-      }
 
       if (function_.server instanceof AliceDirectiveFunctionServer) {
         const directive = await function_.server.callDirectiveFunction(sessionId, metadata,
-          call.name, call.parameters, parentSpan)
+          call.name, call.arguments, parentSpan)
         if (!directive) {
           continue
         }
@@ -413,43 +395,48 @@ export class Processor {
         continue
       }
 
-      promises.push((async () => {
-        try {
-          if (call.schedule) {
-            this.logger.info(`Calling ${call.name} with ${JSON.stringify(call.parameters)} after ${call.schedule} milliseconds`)
-            await new Promise(resolve => setTimeout(resolve, call.schedule))
-          }
-          await function_.server.callFunction(sessionId, metadata, call.name, call.parameters, parentSpan)
-        } catch (error) {
-          this.logger.warn(`Failed to call function '${call.name}' with parameters ${JSON.stringify(call.parameters)}: `, error)
-        }
-      })())
-    }
-
-    return [directives, Promise.all(promises).then(() => {})]
-  }
-
-  private callMCPFunctions (mcpFunctions: ExtendedMCPFunctions,
-    functionCalls: MCPFunctionCall[], parentSpan: Span): Promise<[string, string]>[] {
-    const promises: Promise<[string, string]>[] = []
-    for (const call of functionCalls) {
-      const function_ = mcpFunctions[call.name]
-      if (!function_) {
-        this.logger.warn(`Tried to call non-existent function '${call.name}'`)
+      if (function_.hasResponse && call.schedule) {
+        this.logger.warn(`Tried to call function with resposing using schedule: '${call.schedule}'`)
         continue
       }
 
-      promises.push((async () => {
-        try {
-          return [call.name, await function_.server.callFunction(call.name, call.arguments, parentSpan)]
-        } catch (error) {
-          this.logger.warn(`Failed to call function '${call.name}' with parameters ${JSON.stringify(call.arguments)}: `, error)
-          return [call.name, `Failed to call function '${call.name}' with parameters ${JSON.stringify(call.arguments)}: ${error}`]
-        }
-      })())
+      if (function_.hasResponse) {
+        hasResponsePromises.push((async () => {
+          try {
+            const arguments_ = function_.argumentsSchema.safeParse(call.arguments)
+            if (!arguments_.success) {
+              this.logger.warn(`Failed to parse arguments: '${call.name}' '${JSON.stringify(call.arguments)}' '${JSON.stringify(arguments_.error.issues)}'`)
+              return [call.name, `Arguments parse error: ${JSON.stringify(arguments_.error.issues)}`]
+            }
+            return [call.name, await function_.server.callFunction(sessionId, metadata, call.name,
+              arguments_, parentSpan)]
+          } catch (error) {
+            this.logger.warn(`Failed to call function '${call.name}' with parameters ${JSON.stringify(call.arguments)}: `, error)
+            return [call.name, `Error: ${error}`]
+          }
+        })())
+      } else {
+        noResponsePromises.push((async () => {
+          try {
+            const arguments_ = function_.argumentsSchema.safeParse(call.arguments)
+            if (!arguments_.success) {
+              this.logger.warn(`Failed to parse arguments: '${call.name}' '${JSON.stringify(call.arguments)}' '${JSON.stringify(arguments_.error.issues)}'`)
+              return
+            }
+            if (call.schedule) {
+              this.logger.info(`Calling ${call.name} with ${JSON.stringify(arguments_)} after ${call.schedule} milliseconds`)
+              await new Promise(resolve => setTimeout(resolve, call.schedule))
+              return
+            }
+            await function_.server.callFunction(sessionId, metadata, call.name, arguments_, parentSpan)
+          } catch (error) {
+            this.logger.warn(`Failed to call function '${call.name}' with parameters ${JSON.stringify(call.arguments)}: `, error)
+          }
+        })())
+      }
     }
 
-    return promises
+    return [directives, noResponsePromises, hasResponsePromises]
   }
 
   private async getFunctions (parentSpan: Span): Promise<ExtendedFunctions> {
@@ -527,45 +514,6 @@ export class Processor {
     })
   }
 
-  private async getMCPFunctions (parentSpan: Span): Promise<ExtendedMCPFunctions> {
-    return startSpan({
-      name: 'Requesting MCP functions',
-      op: 'get-mcp-functions',
-      parentSpan
-    }, async span => {
-      const promises: Promise<[MCPServer, MCPFunctions, undefined | unknown]>[] = []
-      for (const server of this.parameters.mcpServers) {
-        promises.push((async () => {
-          try {
-            const functions = await server.getFunctions(span)
-            return [server, functions, undefined]
-          } catch (error) {
-            return [server, {}, error]
-          }
-        })())
-      }
-      const resultFunctions: ExtendedMCPFunctions = {}
-      const results = await Promise.all(promises)
-      for (const [server, state, error] of results) {
-        if (error) {
-          this.logger.warn(`MCP server ${server.getName()} returned error while fetching functions: `, error)
-          continue
-        }
-        for (const [key, functionInfo] of Object.entries(state)) {
-          if (resultFunctions[key]) {
-            this.logger.warn(`MCP server ${server.getName()} returned duplicate function entry '${key}'`)
-            continue
-          }
-          resultFunctions[key] = {
-            ...functionInfo,
-            server
-          }
-        }
-      }
-      return resultFunctions
-    })
-  }
-
   private async getState (sessionId: string, metadata: object, parentSpan: Span): Promise<State> {
     return startSpan({
       name: 'Requesting state',
@@ -601,129 +549,13 @@ export class Processor {
       return resultState
     })
   }
-
-  private validateParameters (function_: ExtendedFunctionInfo, callArguments: FunctionCallArguments): boolean {
-    const callArgumentsList = Object.entries(callArguments)
-      .toSorted((a, b) => compareStrings(a[0], b[0]))
-    const requiredArgumentsList = Object.entries(function_.arguments)
-      .toSorted((a, b) => compareStrings(a[0], b[0]))
-
-    if (callArgumentsList.length !== requiredArgumentsList.length) {
-      return false
-    }
-
-    for (const [index, [callArgumentName, callArgumentValue]] of callArgumentsList.entries()) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const [requiredArgumentName, requiredArgumentConstraints] = requiredArgumentsList[index]!
-
-      if (callArgumentName !== requiredArgumentName) {
-        this.logger.warn(`Call argument '${callArgumentName}' !== '${requiredArgumentName}'`)
-        return false
-      }
-
-      if (!this.validateParameterValue(callArgumentValue, requiredArgumentConstraints)) {
-        this.logger.warn(`Call argument '${callArgumentName}' value does not satisfy constraints`)
-        return false
-      }
-    }
-
-    return true
-  }
-
-  private validateParameterValue (value: number | string, constraints: FunctionArgument): boolean {
-    let numberValue = 0
-    let stringValue = ''
-    switch (constraints.constraints.argumentType) {
-      case 'number': {
-        switch (typeof value) {
-          case 'number': {
-            numberValue = value
-            break
-          }
-          case 'string': {
-            try {
-              numberValue = Number.parseFloat(value)
-            } catch {
-              this.logger.warn(`Failed to parse '${value}' as number`)
-              return false
-            }
-            break
-          }
-        }
-        break
-      }
-      case 'string': {
-        switch (typeof value) {
-          case 'number': {
-            stringValue = value.toString()
-            break
-          }
-          default: {
-            stringValue = value
-            break
-          }
-        }
-        break
-      }
-    }
-    switch (constraints.constraints.type) {
-      case 'number-min-max': {
-        if (numberValue < constraints.constraints.min || numberValue > constraints.constraints.max) {
-          return false
-        }
-        break
-      }
-      case 'number-variants': {
-        if (!constraints.constraints.variants.some(variant => variant.value === numberValue)) {
-          return false
-        }
-        break
-      }
-      case 'string-not-empty': {
-        if (!stringValue) {
-          return false
-        }
-        break
-      }
-      case 'string-variants': {
-        if (!constraints.constraints.variants.some(variant => variant.value === stringValue)) {
-          return false
-        }
-        break
-      }
-    }
-    return true
-  }
 }
 
-function compareStrings (a: string, b: string): number {
-  if (a < b) {
-    return -1
-  }
-  if (a > b) {
-    return 1
-  }
-  return 0
-}
-
-function parseFunctionCall (rawCall: unknown): FunctionCall | MCPFunctionCall | null {
+function parseFunctionCall (rawCall: unknown): FunctionCall | null {
   const call = functionCallType.parse(rawCall)
-  if (call.jsonArgs) {
-    return {
-      arguments: call.jsonArgs,
-      kind: 'mcp',
-      name: call.name
-    }
-  }
-
-  if (!call.args) {
-    return null
-  }
-
   return {
-    kind: 'default',
+    arguments: call.args ?? null,
     name: call.name,
-    parameters: call.args,
     ...(call.schedule
       ? {
           schedule: parseSchedule(call.schedule)

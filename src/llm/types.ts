@@ -1,3 +1,5 @@
+import z from 'zod'
+
 export interface FunctionArgument {
   constraints: FunctionArgumentValueConstraints;
   description: string;
@@ -40,17 +42,17 @@ export interface FunctionArgumentValueStringVariantsConstraints {
 }
 
 export interface FunctionCall {
-  kind: 'default'
+  arguments: unknown;
   name: string;
-  parameters: FunctionCallArguments;
   schedule?: number;
 }
 
 export type FunctionCallArguments = Record<string, number | string>
 
-export interface FunctionInfo {
-  arguments: Record<string, FunctionArgument>;
+export interface FunctionInfo<T = unknown> {
+  argumentsSchema: z.ZodSchema<T>;
   description: string;
+  hasResponse: boolean;
 }
 
 export type Functions = Record<string, FunctionInfo>
@@ -59,12 +61,6 @@ export interface LLMMessage {
   content: string
   name?: string
   role: 'assistant' | 'system' | 'user',
-}
-
-export interface MCPFunctionCall {
-  arguments: unknown
-  kind: 'mcp',
-  name: string;
 }
 
 export type State = Record<string, StateEntry>

@@ -54,4 +54,6 @@ export class RemoteStateServer implements StateServer {
       return result
     })
   }
+
+  async initialize (): Promise<void> {}
 }

@@ -6,10 +6,9 @@ import { Server as WSServer } from 'ws'
 
 import { getEnvironment } from './environment'
 import { createAliceDirectiveFunctionServer } from './llm/function/alice-directive'
+import { RemoteMCPServer } from './llm/function/mcp-remote'
 import { RemoteFunctionServer } from './llm/function/remote'
 import { FunctionServer } from './llm/function/types'
-import { RemoteMCPServer } from './llm/mcp/remote'
-import { MCPServer } from './llm/mcp/types'
 import { HandlebarsPromptGenerator } from './llm/prompt-generator/handlebars'
 import { RemoteStateServer } from './llm/state/remote'
 import { SystemStateServer } from './llm/state/system'
@@ -49,17 +48,24 @@ for (const url of environment.PROCESSOR_FUNCTION_SERVER_URLS) {
   functionServers.push(new RemoteFunctionServer(url))
 }
 
-const mcpServers: MCPServer[] = []
 for (const url of environment.PROCESSOR_MCP_SERVER_URLS) {
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  mcpServers.push(new RemoteMCPServer(url.split('#')[1]!, url.split('#')[0]!))
+  functionServers.push(new RemoteMCPServer(url.split('#')[1]!, url.split('#')[0]!))
 }
 
 (async () => {
-  for (const server of mcpServers) {
+  for (const server of stateServers) {
     try {
-      await server.init()
-      logger.info(`${server.getName()} initialized successfully`)
+      await server.initialize()
+      logger.info(`State server ${server.getName()} initialized successfully`)
+    } catch (error) {
+      logger.error(`Failed to init ${server.getName()} server: `, error)
+    }
+  }
+  for (const server of functionServers) {
+    try {
+      await server.initialize()
+      logger.info(`Function server ${server.getName()} initialized successfully`)
     } catch (error) {
       logger.error(`Failed to init ${server.getName()} server: `, error)
     }
@@ -77,7 +83,6 @@ const sessionStorage = new InMemorySessionStorage<LLMMessage[]>()
 const processor = new Processor({
   cacheSize: environment.CACHE_SIZE,
   functionServers,
-  mcpServers,
   model: environment.OPENAI_MODEL,
   openAI,
   promptGenerator,

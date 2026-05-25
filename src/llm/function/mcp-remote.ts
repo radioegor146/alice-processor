@@ -1,11 +1,14 @@
 import { Client } from '@modelcontextprotocol/sdk/client'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp'
 import { Span, startSpan } from '@sentry/node'
+import z from 'zod'
+import { JSONSchema } from 'zod/v4/core'
 
 import { getLogger } from '../../logger'
-import { MCPFunctions, MCPServer } from './types'
+import { Functions } from '../types'
+import { FunctionServer } from './types'
 
-export class RemoteMCPServer implements MCPServer {
+export class RemoteMCPServer implements FunctionServer {
   private readonly logger = getLogger<RemoteMCPServer>()
   private readonly mcp: Client
 
@@ -13,7 +16,8 @@ export class RemoteMCPServer implements MCPServer {
     this.mcp = new Client({ name: 'alice-processor', version: '1.0.0' })
   }
 
-  async callFunction (functionName: string, arguments_: unknown, parentSpan: Span): Promise<string> {
+  async callFunction (_sessionId: string, _metadata: object,
+    functionName: string, arguments_: unknown, parentSpan: Span): Promise<string> {
     return startSpan({
       attributes: {
         arguments: JSON.stringify(arguments_, undefined, 2)
@@ -37,18 +41,19 @@ export class RemoteMCPServer implements MCPServer {
     })
   }
 
-  async getFunctions (parentSpan: Span): Promise<MCPFunctions> {
+  async getFunctions (parentSpan: Span): Promise<Functions> {
     return startSpan({
       name: `Requesting MCP functions from ${this.getName()}`,
       op: 'get-mcp-functions-server',
       parentSpan
     }, async () => {
       const tools = await this.mcp.listTools()
-      const functions: MCPFunctions = {}
+      const functions: Functions = {}
       for (const tool of tools.tools) {
         functions[`${this.name}_${tool.name}`] = {
-          argumentsSchema: tool.inputSchema,
-          description: tool.description ?? '???'
+          argumentsSchema: z.fromJSONSchema(tool.inputSchema as JSONSchema._JSONSchema),
+          description: tool.description ?? '???',
+          hasResponse: true
         }
       }
       return functions
@@ -59,7 +64,7 @@ export class RemoteMCPServer implements MCPServer {
     return `mcp{${this.name}#${this.url}`
   }
 
-  async init (): Promise<void> {
+  async initialize (): Promise<void> {
     this.mcp.connect(new StreamableHTTPClientTransport(new URL(this.url)))
   }
 }
