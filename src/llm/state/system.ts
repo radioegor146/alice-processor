@@ -1,4 +1,12 @@
+import { PROCESSOR_METADATA_SERVER_TYPE_KEY, ProcessorMetadataServerType } from '@v3rt3p/types/processor'
+
 import { State, StateServer } from './types'
+
+const names: Record<'unknown' | ProcessorMetadataServerType | string, string> = {
+  marusya: 'Маруся',
+  quasar: 'Алиса (but you can be addressed by user as Яндекс or Ясмина)',
+  unknown: 'unknown, you DO NOT KNOW your name'
+}
 
 export class SystemStateServer implements StateServer {
   async getIndependentState (_sessionId: string): Promise<State> {
@@ -11,6 +19,11 @@ export class SystemStateServer implements StateServer {
 
   async getState (_sessionId: string, metadata: object): Promise<State> {
     return {
+      assistant_name: {
+        description: 'name of assistant (YOU)',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        value: names[(metadata as any)[PROCESSOR_METADATA_SERVER_TYPE_KEY] ?? 'unknown'] ?? 'unknown'
+      },
       date_time: {
         description: 'current time and date in DD-MM-YYYY HH:MM:SS format',
         value: this.getCurrentTimeAndDateFormatted()
