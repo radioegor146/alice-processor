@@ -2,8 +2,7 @@ import { Span, startSpan } from '@sentry/node'
 import { Directive } from '@v3rt3p/types/directives'
 import z from 'zod'
 
-import { FunctionInfo, Functions } from '../types'
-import { FunctionServer } from './types'
+import { FunctionInfo, Functions, FunctionServer } from './types'
 
 export interface DirectiveFunction<T> {
   implementation: (sessionId: string, metadata: object, input: T) => Promise<Directive>,

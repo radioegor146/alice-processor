@@ -1,12 +1,7 @@
 import { Span } from '@sentry/node'
-import z from 'zod'
+import { FunctionStateServerStateResponse } from '@v3rt3p/types/function-state-server'
 
-import { State } from '../types'
-
-export const stateType = z.record(z.string(), z.object({
-  description: z.string(),
-  value: z.string()
-}))
+export type State = FunctionStateServerStateResponse
 
 export interface StateServer {
   getIndependentState(sessionId: string, parentSpan: Span): Promise<State>

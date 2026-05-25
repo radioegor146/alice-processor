@@ -1,5 +1,4 @@
-import { State } from '../types'
-import { StateServer } from './types'
+import { State, StateServer } from './types'
 
 export class SystemStateServer implements StateServer {
   async getIndependentState (_sessionId: string): Promise<State> {

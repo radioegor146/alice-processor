@@ -5,8 +5,7 @@ import z from 'zod'
 import { JSONSchema } from 'zod/v4/core'
 
 import { getLogger } from '../../logger'
-import { Functions } from '../types'
-import { FunctionServer } from './types'
+import { Functions, FunctionServer } from './types'
 
 export class RemoteMCPServer implements FunctionServer {
   private readonly logger = getLogger<RemoteMCPServer>()

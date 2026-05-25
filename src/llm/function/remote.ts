@@ -1,8 +1,7 @@
 import { Span, startSpan } from '@sentry/node'
 import z from 'zod'
 
-import { FunctionInfo, Functions } from '../types'
-import { FunctionServer } from './types'
+import { FunctionInfo, Functions, FunctionServer } from './types'
 
 const functionArgumentType = z.object({
   constraints: z.discriminatedUnion('type', [

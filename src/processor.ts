@@ -10,15 +10,11 @@ import { WebSocket } from 'ws'
 import z from 'zod'
 
 import { DirectiveFunctionServer } from './llm/function/directive'
-import { FunctionServer } from './llm/function/types'
+import { FunctionCall, FunctionInfo, Functions, FunctionServer } from './llm/function/types'
 import { PromptGenerator } from './llm/prompt-generator/types'
-import { StateServer } from './llm/state/types'
+import { State, StateServer } from './llm/state/types'
 import {
-  FunctionCall,
-  FunctionInfo,
-  Functions,
-  LLMMessage,
-  State
+  LLMMessage
 } from './llm/types'
 import { getLogger } from './logger'
 import { SessionStorage } from './session-storage/types'
