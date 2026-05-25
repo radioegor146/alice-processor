@@ -5,7 +5,7 @@ import { OpenAI } from 'openai'
 import { Server as WSServer } from 'ws'
 
 import { getEnvironment } from './environment'
-import { createAliceDirectiveFunctionServer } from './llm/function/alice-directive'
+import { createDirectiveFunctionServer } from './llm/function/directive'
 import { RemoteMCPServer } from './llm/function/mcp-remote'
 import { RemoteFunctionServer } from './llm/function/remote'
 import { FunctionServer } from './llm/function/types'
@@ -42,7 +42,7 @@ for (const url of environment.PROCESSOR_STATE_SERVER_URLS) {
 }
 
 const functionServers: FunctionServer[] = [
-  createAliceDirectiveFunctionServer()
+  createDirectiveFunctionServer()
 ]
 for (const url of environment.PROCESSOR_FUNCTION_SERVER_URLS) {
   functionServers.push(new RemoteFunctionServer(url))

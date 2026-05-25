@@ -1,5 +1,7 @@
 import { continueTrace, Span, startInactiveSpan, startSpan } from '@sentry/node'
 import { JSONParser } from '@streamparser/json'
+import { Directive } from '@v3rt3p/types/directives'
+import { processorClientWebSocketMessage, ProcessorServerWebSocketMessage } from '@v3rt3p/types/processor'
 import { Sema } from 'async-sema'
 import { LRUCache } from 'lru-cache'
 import { randomUUID } from 'node:crypto'
@@ -7,7 +9,7 @@ import { OpenAI } from 'openai'
 import { WebSocket } from 'ws'
 import z from 'zod'
 
-import { AliceDirectiveFunctionServer } from './llm/function/alice-directive'
+import { DirectiveFunctionServer } from './llm/function/directive'
 import { FunctionServer } from './llm/function/types'
 import { PromptGenerator } from './llm/prompt-generator/types'
 import { StateServer } from './llm/state/types'
@@ -22,21 +24,6 @@ import { getLogger } from './logger'
 import { SessionStorage } from './session-storage/types'
 
 const logger = getLogger()
-
-export type AliceDirective = SoundLouderDirective | SoundQuieterDirective | SoundSetLevelDirective
-
-export interface SoundLouderDirective {
-  type: 'soundLouder';
-}
-
-export interface SoundQuieterDirective {
-  type: 'soundQuieter';
-}
-
-export interface SoundSetLevelDirective {
-  newLevel: number;
-  type: 'soundSetLevel';
-}
 
 type ExtendedFunctionInfo = FunctionInfo & {
   server: FunctionServer
@@ -92,21 +79,6 @@ const scheduleTimeRegexes: { coefficient: number; regex: RegExp, }[] = [
   },
 ]
 
-const webSocketMessageType = z.union([
-  z.object({
-    data: z.object({}),
-    type: z.literal('prepare')
-  }),
-  z.object({
-    data: z.object({
-      isExternalEvent: z.boolean().optional(),
-      metadata: z.record(z.string(), z.any()),
-      text: z.string()
-    }),
-    type: z.literal('process')
-  })
-])
-
 interface SentryContext {
   baggage: string | undefined,
   sentryTrace: string | undefined
@@ -136,6 +108,16 @@ export class Processor {
     let isFirstRequest = true
     let functions: ExtendedFunctions
 
+    async function send (message: ProcessorServerWebSocketMessage): Promise<void> {
+      return new Promise<void>((resolve, reject) => webSocket.send(JSON.stringify(message), (error) => {
+        if (error) {
+          reject(error)
+        } else {
+          resolve()
+        }
+      }))
+    }
+
     webSocket.addEventListener('error', error => {
       this.logger.info(`WebSocket session error: ${error.error}`)
     })
@@ -146,7 +128,7 @@ export class Processor {
     webSocket.addEventListener('message', async message => {
       await lock.acquire()
       try {
-        const decodedData = webSocketMessageType.parse(JSON.parse(message.data.toString()))
+        const decodedData = processorClientWebSocketMessage.parse(JSON.parse(message.data.toString()))
 
         switch (decodedData.type) {
           case 'prepare': {
@@ -207,7 +189,7 @@ export class Processor {
                 }, async singleOperationSpan => {
                   this.logger.info(`Processing ${messages.length} messages`)
 
-                  const directives: AliceDirective[] = []
+                  const directives: Directive[] = []
                   const hasResponsePromises: Promise<[string, string]>[] = []
                   const noResponsePromises: Promise<void>[] = []
 
@@ -231,7 +213,7 @@ export class Processor {
                     noResponsePromises.push(...functionsPromises)
                   } else {
                     this.logger.info('Querying LLM')
-                    const callFunctionsPromises: Promise<[AliceDirective[], Promise<void>,
+                    const callFunctionsPromises: Promise<[Directive[], Promise<void>,
                       Promise<[string, string]>]>[] = []
 
                     const jsonParser = new JSONParser()
@@ -320,21 +302,15 @@ export class Processor {
 
                   isFirstRequest = false
 
-                  await new Promise<void>((resolve, reject) => webSocket.send(JSON.stringify({
+                  await send({
                     data: {
                       directives,
                       finished: hasResponsePromises.length === 0,
-                      requireMoreInput: structuredResponse.requireMoreInput,
+                      shouldListen: structuredResponse.requireMoreInput,
                       text: structuredResponse.text
                     },
                     type: 'partialResponse'
-                  }), (error) => {
-                    if (error) {
-                      reject(error)
-                    } else {
-                      resolve()
-                    }
-                  }))
+                  })
 
                   if (hasResponsePromises.length === 0) {
                     if (!structuredResponse.requireMoreInput) {
@@ -371,9 +347,9 @@ export class Processor {
   }
 
   private async callFunctions (sessionId: string, metadata: object, functions: ExtendedFunctions,
-    functionCalls: FunctionCall[], parentSpan: Span): Promise<[AliceDirective[], Promise<void>[],
+    functionCalls: FunctionCall[], parentSpan: Span): Promise<[Directive[], Promise<void>[],
       Promise<[string, string]>[]]> {
-    const directives: AliceDirective[] = []
+    const directives: Directive[] = []
 
     const noResponsePromises: Promise<void>[] = []
     const hasResponsePromises: Promise<[string, string]>[] = []
@@ -385,7 +361,7 @@ export class Processor {
         continue
       }
 
-      if (function_.server instanceof AliceDirectiveFunctionServer) {
+      if (function_.server instanceof DirectiveFunctionServer) {
         const directive = await function_.server.callDirectiveFunction(sessionId, metadata,
           call.name, call.arguments, parentSpan)
         if (!directive) {

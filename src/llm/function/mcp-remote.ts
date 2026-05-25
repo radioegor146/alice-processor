@@ -13,7 +13,7 @@ export class RemoteMCPServer implements FunctionServer {
   private readonly mcp: Client
 
   constructor (private readonly url: string, private readonly name: string) {
-    this.mcp = new Client({ name: 'alice-processor', version: '1.0.0' })
+    this.mcp = new Client({ name: '@v3rt3p/processor', version: '1.0.0' })
   }
 
   async callFunction (_sessionId: string, _metadata: object,

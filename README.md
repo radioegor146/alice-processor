@@ -1,3 +1,3 @@
-# alice-processor
+# processor
 
-Processor for quasar-server that uses local hosted LLM
+Processor for voice agent speaker servers that uses local hosted LLM

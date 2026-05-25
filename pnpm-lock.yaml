@@ -32,6 +32,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      '@v3rt3p/types':
+        specifier: github:v3rt3p/types#1.0.1
+        version: https://codeload.github.com/v3rt3p/types/tar.gz/fe11e811d4ddda507cd341272359665731623b74
       async-sema:
         specifier: ^3.1.1
         version: 3.1.1
@@ -879,6 +882,10 @@ packages:
     resolution: {integrity: sha512-lrW200hZdbfRtztbygyaq/6jP6AKE8qQN2KvPcJ+x7wiD038YtnYtZ82IMNJ69GJibV7bwL3y9FgK+5w/pYt6g==}
     cpu: [x64]
     os: [win32]
+
+  '@v3rt3p/types@https://codeload.github.com/v3rt3p/types/tar.gz/fe11e811d4ddda507cd341272359665731623b74':
+    resolution: {tarball: https://codeload.github.com/v3rt3p/types/tar.gz/fe11e811d4ddda507cd341272359665731623b74}
+    version: 1.0.0
 
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
@@ -3185,6 +3192,10 @@ snapshots:
 
   '@unrs/resolver-binding-win32-x64-msvc@1.11.1':
     optional: true
+
+  '@v3rt3p/types@https://codeload.github.com/v3rt3p/types/tar.gz/fe11e811d4ddda507cd341272359665731623b74':
+    dependencies:
+      zod: 4.4.3
 
   accepts@2.0.0:
     dependencies:
