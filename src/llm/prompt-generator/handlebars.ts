@@ -1,6 +1,7 @@
 import Handlebars from 'handlebars'
 
-import { Functions, State } from '../types'
+import { Functions } from '../function/types'
+import { State } from '../state/types'
 import { PromptGenerator } from './types'
 
 export class HandlebarsPromptGenerator implements PromptGenerator {

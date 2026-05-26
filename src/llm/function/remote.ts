@@ -121,7 +121,7 @@ function mapEntry (entry: z.infer<typeof functionInfoType>): FunctionInfo {
     types[key] = convertToZodType(value)
   }
   return {
-    argumentsSchema: Object.keys(types).length === 0 ? z.null() : z.object(types),
+    argumentsSchema: Object.keys(types).length === 0 ? z.unknown() : z.object(types),
     description: entry.description,
     hasResponse: false
   }
